@@ -1,0 +1,96 @@
+---
+title: "Texas"
+output: html_document
+date: "2024-10-25"
+---
+
+
+
+# Data from here 
+```{r setup, include=FALSE}
+library(readr)
+library(tidyverse)
+library(here)
+library(sf)
+library(ggplot2)
+library(tmap)
+library(tmaptools)
+library(spatstat)
+library(janitor)
+library(dplyr)
+library(fs)
+library(stringr)
+library(RColorBrewer)
+
+
+```
+
+```{r}
+
+download.file("https://www2.census.gov/geo/tiger/TIGER2020PL/LAYER/STATE/2020/tl_2020_48_state20.zip", 
+              destfile="Data/census_shape_48.zip")
+```
+
+## R Markdown
+
+```{r cars}
+#Check which files are within, because there are several with different boundaries
+listfiles<-dir_info(here::here("Data")) %>%
+  dplyr::filter(str_detect(path, "census_shape_48.zip")) %>%
+  dplyr::select(path)%>%
+  pull() %>%
+  #print out the .gz file
+  print()%>%
+  as.character()%>%
+  utils::unzip(exdir=here::here("Data"))
+
+listfiles
+
+#create data object called Texas to use in analysis
+state48 <-fs::dir_info(here::here("Data"
+                                 ))%>%
+  #$ means exact match
+  dplyr::filter(str_detect(path, 
+                           "tl_2020_48_state20.shp$"))%>%
+  dplyr::select(path)%>%
+  dplyr::pull()%>%
+  #read in the file in
+  sf::st_read()
+```
+```{r}
+qtm(state48)
+```
+```{r}
+# Get counties 
+download.file("https://www2.census.gov/geo/tiger/TIGER2020PL/LAYER/COUNTY/2020/tl_2020_48_county20.zip", 
+              destfile="Data/county_shape_48.zip")
+```
+
+```{r}
+#create data object called Texas to use in analysis
+
+listfiles<-dir_info(here::here("Data")) %>%
+  dplyr::filter(str_detect(path, "county_shape_48.zip")) %>%
+  dplyr::select(path)%>%
+  pull() %>%
+  #print out the .gz file
+  print()%>%
+  as.character()%>%
+  utils::unzip(exdir=here::here("Data"))
+
+listfiles
+
+county48 <-fs::dir_info(here::here("Data"  
+                                 ))%>% 
+  #$ means exact match
+  dplyr::filter(str_detect(path, 
+                           "tl_2020_48_county20.shp$"))%>%
+  dplyr::select(path)%>%
+  dplyr::pull()%>%
+  #read in the file in
+  sf::st_read()
+```
+```{r}
+qtm(county48)
+```
+
