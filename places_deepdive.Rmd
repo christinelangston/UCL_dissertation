@@ -1,0 +1,310 @@
+---
+title: "Places_deepdive"
+output: html_document
+date: "2025-02-24"
+---
+
+Map the specific metro areas in Texas
+
+```{r Load Libraries}
+library(tidycensus)
+library(tidyverse)
+library(choroplethr)
+library(choroplethrMaps)
+library(ggplot2)
+library(dplyr)
+library(tmap)
+library(sf)
+```
+
+```{r Additional libraries}
+#specific for data pull
+library(jsonlite)
+
+library(janitor)
+```
+
+Steps:
+-- Pull Data:
+    --places boundaries, redlining
+-- select one place, intersect with the tracts layer 
+-- Project historic redlining
+
+Pull the 'place' boundary according to the US Census 
+```{r}
+#Definine which city I am looking into 
+city <- "Austin" #"Houston" # "Dallas"
+
+places <- st_read("~/Documents/_UCL_grad school/UCL/Dis/trial_project/Data/tl_2024_48_place/tl_2024_48_place.shp") %>% st_transform(., 4326)
+
+```
+
+# Context questions to answer: 
+  - Why Houston? Did Dallas too
+  - Why do they have a really weird outline? why did I extend the intersect boundary by 100 miles? 
+
+Project the places boundary 
+```{r pressure, echo=FALSE}
+city_boundary  <- places %>% filter(., NAME == city)
+qtm(city_boundary)
+```
+
+Pull historic redlining
+
+```{r}
+
+geojson_url <- paste("https://services.arcgis.com/ak2bo87wLfUpMrt1/ArcGIS/rest/services/MappingInequalityRedliningAreas_231211/FeatureServer/0/query?where=city+%3D+%27", toupper(city), "%27&objectIds=&geometry=&geometryType=esriGeometryEnvelope&inSR=&spatialRel=esriSpatialRelIntersects&resultType=none&distance=0.0&units=esriSRUnit_Meter&relationParam=&returnGeodetic=false&outFields=*&returnGeometry=true&returnCentroid=false&returnEnvelope=false&featureEncoding=esriDefault&multipatchOption=xyFootprint&maxAllowableOffset=&geometryPrecision=&outSR=&defaultSR=&datumTransformation=&applyVCSProjection=false&returnIdsOnly=false&returnUniqueIdsOnly=false&returnCountOnly=false&returnExtentOnly=false&returnQueryGeometry=false&returnDistinctValues=false&cacheHint=false&collation=&orderByFields=&groupByFieldsForStatistics=&outStatistics=&having=&resultOffset=&resultRecordCount=&returnZ=false&returnM=false&returnTrueCurves=false&returnExceededLimitFeatures=true&quantizationParameters=&sqlFormat=none&f=pgeojson&token=", sep = "")
+
+redlining_boundary <- st_read(geojson_url)  %>% st_transform(., 4326)
+
+```
+Project the redlining boundary 
+```{r}
+#figure out some casting / shaping of the json object... 
+qtm(redlining_boundary$geometry)
+```
+
+#Plot the boundaries and the redlining
+```{r}
+redlining_boundary <- redlining_boundary[st_intersects(redlining_boundary, city_boundary) %>% lengths > 0,]
+
+ggplot() + 
+  geom_sf(data = city_boundary, aes(geometry = geometry)) +
+   geom_sf(data = redlining_boundary, aes(fill = fill, geometry = geometry))  +
+  labs(
+    title = paste(city, "Texas Boundaries Overlayed with Historic Redlining"),
+    caption = "Data: Redlining Areas, University of Richmond | US Census"
+  ) + # +  theme(legend.title = c("Redlining Areas", ""))
+theme_classic()
+
+# + scale_fill_manual(labels = redlining_boundary$category)
+
+#values = c('darkgreen', 'red', 'yellow'),
+
+```
+
+Load the census tracts 
+```{r}
+texas_tracts <- st_read("~/Documents/_UCL_grad school/UCL/Dis/trial_project/Data/tract_shape_48/tl_2020_48_tract20.shp") %>%
+  st_transform(., 4326)
+```
+
+Create a buffer around census tracts to consider commuting zone 
+```{r}
+#add a 100km buffer
+boundary_with_buffer <- st_buffer(city_boundary$geometry, 10000)
+
+#TODO: Want the entire tract area of the ones that intersect... 
+tracts_intersect_buffer <- texas_tracts[st_intersects(texas_tracts, boundary_with_buffer) %>% lengths > 0,]
+ #<- st_intersection(texas_tracts, boundary_with_buffer)
+```
+
+#lets map them overlaid to see where the city covers the texas census tracts 
+
+```{r}
+
+ggplot() +  geom_sf(data = texas_tracts, aes(geometry = geometry)) +
+ #  geom_sf(data = boundary_with_buffer, aes(geometry = geometry)) +
+   geom_sf(data = tracts_intersect_buffer, fill = "red", aes(geometry = geometry)) 
+
+```
+
+Proceed with just mapping the tracts and the overlay of the 'place' boundary
+
+Plot the buffer with the boundary too 
+```{r}
+ggplot()  +  geom_sf(data = tracts_intersect_buffer, color = "grey", fill = NA, aes(geometry = geometry)) + 
+    geom_sf(data = city_boundary, fill = "red", color= "red", alpha = 0.1, aes(geometry = geometry)) + 
+  theme_void()
+
+```
+
+
+#Read in preprocessed data
+```{r}
+#save the dataset as a CSV 
+merged_tract_tx <- read_csv("~/Documents/_UCL_grad school/UCL/Dis/trial_project/Data/save_census_data_tract.csv") %>%
+  select(., c("GEOID", "population23", "housing_unit23", "median_value23"))
+
+summary(merged_tract_tx)
+```
+
+```{r}
+tract_tx_total_hunit <- read_csv("~/Documents/_UCL_grad school/UCL/Dis/trial_project/Data/housing_tract_census_tx.csv") %>% 
+  select(., c("GEOID", "units_built_2010_19", "units_built_2020", 
+              "units_built_since_2010"))
+
+tract_tx_total_hunit$GEOID <- as.character(tract_tx_total_hunit$GEOID)
+
+summary(tract_tx_total_hunit)
+
+merged_tract_tx <- merged_tract_tx %>%
+  left_join(., tract_tx_total_hunit, by = c("GEOID" = "GEOID"))
+```
+
+
+```{r}
+summary(merged_tract_tx)
+```
+
+```{r}
+pairs(merged_tract_tx %>% select(2 :7))
+
+```
+
+```{r}
+hist(merged_tract_tx$population23)
+
+hist(merged_tract_tx$units_built_since_2010)
+
+```
+
+
+#Merge the census data with the entire state shapefile of census tracts....
+
+```{r}
+merged_tract_tx$GEOID <- as.character(merged_tract_tx$GEOID)
+
+merged_tract_tx_geo <-  merged_tract_tx %>% 
+  left_join(., texas_tracts, by = c("GEOID" = "GEOID20"))
+```
+
+##todo:
+ - calculate the housing density at the tract level, population density, housing growth density
+ 
+```{r}
+merged_tract_tx_geo <- merged_tract_tx_geo %>% 
+  mutate(pop_density = population23/ALAND20 ) %>%
+  mutate(housing_density = housing_unit23/ALAND20) %>%
+  mutate(unit_growth_density_2010 = units_built_since_2010/ALAND20)
+  
+```
+ 
+
+# lets look at housing production by 
+```{r}
+ggplot() + geom_sf(data = merged_tract_tx_geo, aes(fill = pop_density, geometry = geometry),  lwd = 0)  +
+  theme_void() + 
+    scale_fill_distiller(palette="YlGn" , direction = 1)
+
+```
+
+```{r}
+ggplot() + geom_sf(data = merged_tract_tx_geo, aes(fill = housing_density, geometry = geometry),  lwd = 0)  +
+  theme_void() + 
+    scale_fill_distiller(palette="YlGn" , direction = 1)
+```
+```{r}
+ggplot() + geom_sf(data = merged_tract_tx_geo, aes(fill = unit_growth_density_2010, geometry = geometry),  lwd = 0)  +
+  theme_void() + 
+    scale_fill_distiller(palette="YlGn" , direction = 1)
+```
+
+## should I do some autocorrelation on the counties? Yes 
+## map state wide analysis... 
+
+
+
+```{r}
+#merge the census data with the boundaries 
+
+tracts_intersect_buffer <- tracts_intersect_buffer %>% 
+  left_join(., merged_tract_tx_geo, by = c("GEOID20" = "GEOID"))
+
+#tracts_intersect_buffer <- tracts_intersect_buffer %>%
+#  mutate(unit_density = (housing_unit23.x / ALAND20) )
+
+ggplot()  +  geom_sf(data = tracts_intersect_buffer, aes(fill = housing_density.x, geometry = geometry.x)) +
+#+ geom_sf(data = city_boundary, fill = "red", color= "red", alpha = 0.1, aes(geometry = geometry)) + 
+     geom_sf(data = city_boundary, fill = NA, color= "red", alpha = 0.1, aes(geometry = geometry)) + 
+  theme_classic() +
+  scale_fill_distiller(palette="Greens" , direction = 1) + 
+  labs(
+    title = paste(city, "Texas Census Tracts with unit density and overlay of city outline"),
+    subtitle = "ACS 2023",
+    caption = "Data: US Census | ACS"
+  )
+```
+
+```{r}
+ggplot()  +  geom_sf(data = tracts_intersect_buffer, aes(fill = unit_growth_density_2010.x, geometry = geometry.x)) +
+#+ geom_sf(data = city_boundary, fill = "red", color= "red", alpha = 0.1, aes(geometry = geometry)) + 
+     geom_sf(data = city_boundary, fill = NA, color= "red", alpha = 0.1, aes(geometry = geometry)) + 
+  theme_classic() +
+  scale_fill_distiller(palette="Greens" , direction = 1) + 
+  labs(
+    title = paste(city, "Texas Census Tracts with "),
+    subtitle = "Unit density growth and overlay of city outline",
+    caption = "Data: US Census | ACS 5 year 2023"
+  )
+```
+
+
+
+Introduce the Climate risk data ... 
+```{r}
+NRI_tract <- read_csv("~/Documents/_UCL_grad school/UCL/Dis/trial_project/Data/National_Risk_Index_Census_Tracts_-2688098782675405028.csv")
+
+census_NRI <- st_read("~/Documents/_UCL_grad school/UCL/Dis/trial_project/Data/National_Risk_Index_Census_Tracts_-2688098782675405028.csv")
+
+#cut it down to texas
+NRI_tract <- NRI_tract %>% clean_names()
+
+#includes data for 6883 tracts out of 6896 tracts
+NRI_tx_tract <- NRI_tract %>% filter(., state_fips_code == 48)
+ 
+NRI_tx_tract_small <-  NRI_tx_tract %>% select(., c("county_name", "census_tract", "census_tract_fips_code", "population_2020", "building_value", "area_sq_mi", ,"national_risk_index_value_composite", "national_risk_index_score_composite"))
+
+
+#try plotting the tracts visually... 
+
+tracts_intersect_buffer <- tracts_intersect_buffer %>%
+  left_join(., NRI_tx_tract_small, by = c("GEOID20" = "census_tract_fips_code"))
+```
+
+```{r}
+ggplot()  +  geom_sf(data = tracts_intersect_buffer, aes(fill = national_risk_index_value_composite, geometry = geometry.x)) +
+#+ geom_sf(data = city_boundary, fill = "red", color= "red", alpha = 0.1, aes(geometry = geometry)) +
+  theme_classic() +
+  scale_fill_distiller(palette="YlGn" , direction = 1) + 
+  labs(
+    title = paste(city, "Texas Census Tracts with NRI"),
+    subtitle = "ACS 2023",
+    caption = "Data: US Census | NRI FEMA"
+  )
+```
+
+```{r}
+## lets plot unit density versus NRI 
+
+ggplot() + geom_point(data = tracts_intersect_buffer, aes(y = unit_growth_density_2010.x, x= national_risk_index_value_composite), alpha = 1 / 3) +
+    geom_smooth(data = tracts_intersect_buffer, aes(y=unit_growth_density_2010.x, x = national_risk_index_value_composite), method = "lm", se = FALSE)
+
+
+
+```
+
+```{r}
+#how much housing stock is already in the high risk area? 
+#is the housing growth disproportionately happening there? 
+
+#could we look at percentage outside versus inside the incorporated area? 
+
+
+#built since 2010 239,156 , 827,682 total in the area 
+sum(tracts_intersect_buffer$units_built_since_2010.x)
+sum(tracts_intersect_buffer$housing_unit23.x)
+
+tracts_intersect_buffer$NRI_quartile <- ntile(tracts_intersect_buffer$national_risk_index_value_composite, 5)
+
+
+summary_austin <- tracts_intersect_buffer %>% group_by(NRI_quartile) %>% 
+  summarise(num = n(), totalunit = sum(housing_unit23.x), total_since_2010 = sum(units_built_since_2010.x), total_land = sum(ALAND20))
+
+summary_austin <- summary_austin %>% 
+  mutate(total_unit_density = totalunit / total_land) %>%
+  mutate(growth_density = total_since_2010 / total_land)
+
+summary_austin
+```
+

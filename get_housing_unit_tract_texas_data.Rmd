@@ -1,0 +1,136 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+script to generate two data files. 
+Output: 
+- 'housing_tract_census_tx.csv'
+- 'save_census_data_tract.csv' 
+
+```{r}
+#lets try querying a few more moving variables to estimate how many people have moved...?
+#B07013_013E - has to do with moved in last year...
+#
+#B25034_001E total number of units I think ? 
+#B25034_002 2020 or later
+#B25034_003 2010 to 2019 
+
+tract_tx_new20 <- get_acs(geography = "tract",
+                 variables = c("B25034_002"),
+                state = "TX",
+              #  county = 201,
+                survey = "acs5",
+                year = 2023)
+
+tract_tx_new10 <- get_acs(geography = "tract",
+                 variables = c("B25034_003"),
+                state = "TX",
+              #  county = 201,
+                survey = "acs5",
+                year = 2023)
+
+tract_tx_total_hunit <- get_acs(geography = "tract",
+                 variables = c("B25034_001"),
+                state = "TX",
+              #  county = 201,
+                survey = "acs5",
+                year = 2023)
+
+```
+Lets join these together.... 
+```{r}
+#slim down the datasets to remove the columns we don't need
+tract_tx_new10 <- tract_tx_new10 %>% 
+  select(c("GEOID", "estimate")) %>%
+  rename(units_built_2010_19 = estimate)
+
+tract_tx_new20 <- tract_tx_new20 %>%
+  select(c("GEOID", "estimate")) %>%
+  rename(units_built_2020 = estimate)
+
+tract_tx_total_hunit <- tract_tx_total_hunit %>%
+  rename(total_units = estimate) %>%
+  left_join(., tract_tx_new10, by = c("GEOID" = "GEOID")) %>%
+  left_join(., tract_tx_new20, by = c("GEOID" = "GEOID") )
+
+tract_tx_total_hunit <- tract_tx_total_hunit %>%
+  mutate(units_built_since_2010 = (units_built_2010_19 + units_built_2020)) %>%
+  mutate(units_built_percent_since_2010 = (100*units_built_since_2010 / (total_units -units_built_since_2010)))
+  
+
+head(tract_tx_total_hunit)
+```
+```{r}
+write.csv(tract_tx_total_hunit, "~/Documents/_UCL_grad school/UCL/Dis/trial_project/Data/housing_tract_census_tx.csv") 
+```
+
+Also get the data for population, etc... 
+
+# FETCH the data at Texas Tract levels: Population, Housing units, Median Home Value
+
+```{r}
+# DP05_0001 Total population 
+# DP05_0091 number of housing units 
+# B25077_001 Median home value
+# B07101_001E is the number of movers from another region... 
+#tract_tx_pop <- 
+
+#population tract  
+tract_tx_pop <- get_acs(geography = "tract",
+                 variables = c("DP05_0001"),
+                state = "TX",
+              #  county = 201,
+                survey = "acs5",
+                year = 2023)
+
+tract_tx_hunit <- get_acs(geography = "tract",
+                 variables = c("DP05_0091"),
+                state = "TX",
+              #  county = 201,
+                survey = "acs5",
+                year = 2023)
+
+tract_tx_median_value <- get_acs(geography = "tract",
+                 variables = c("B25077_001"),
+                state = "TX",
+              #  county = 201,
+                survey = "acs5",
+                year = 2023)
+```
+
+
+### Manipulate the data  and merge into one dataset
+```{r}
+# drop unneeded columns
+tract_tx_pop <- tract_tx_pop %>% select(., c("GEOID", estimate )) %>%
+  rename(., population23 = estimate) 
+
+tract_tx_hunit <- tract_tx_hunit %>% select(., c("GEOID", estimate )) %>%
+  rename(., housing_unit23 = estimate) 
+  
+tract_tx_median_value <- tract_tx_median_value %>% select(., c("GEOID", estimate )) %>%
+  rename(., median_value23 = estimate) 
+
+tract_tx_movers <- tract_tx_movers %>% select(., c("GEOID", estimate )) %>%
+  rename(., movers23 = estimate) 
+
+
+merged_tract_tx <- tract_tx_pop %>%
+    left_join(., tract_tx_hunit, 
+            by = c("GEOID" = "GEOID")) %>% 
+    left_join(., tract_tx_median_value, 
+            by = c("GEOID" = "GEOID")) %>% 
+    left_join(., tract_tx_movers, 
+            by = c("GEOID" = "GEOID"))
+
+
+#save the dataset as a CSV 
+write.csv(merged_tract_tx, "~/Documents/_UCL_grad school/UCL/Dis/trial_project/Data/save_census_data_tract.csv") 
+
+
+```
+
+```{r}
+
+```
+
