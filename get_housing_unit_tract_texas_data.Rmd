@@ -7,11 +7,6 @@ Output:
 - 'housing_tract_census_tx.csv'
 - 'save_census_data_tract.csv' 
 
-```{r}
-# Save census API key, at least needed for the third dataset... 
-API_Key = '83a719c9a57b7c2fedd093f9a0108fcf8bf552eb'
-
-```
 
 ```{r}
 library(tidycensus)

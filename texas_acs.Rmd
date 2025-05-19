@@ -7,8 +7,6 @@ Script to pull Census Data and map
 Map the state of texas and also analyse the counties... 
 
 ```{r}
-# Save census API key
-API_Key = '83a719c9a57b7c2fedd093f9a0108fcf8bf552eb'
 
 ```
 
