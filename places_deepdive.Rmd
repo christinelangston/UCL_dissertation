@@ -33,11 +33,17 @@ Steps:
 Pull the 'place' boundary according to the US Census 
 ```{r}
 #Definine which city I am looking into 
-city <- "Austin" #"Houston" # "Dallas"
+city <- "Dallas" # "Austin" #"Houston" # 
 
-places <- st_read("~/Documents/_UCL_grad school/UCL/Dis/trial_project/Data/tl_2024_48_place/tl_2024_48_place.shp") %>% st_transform(., 4326)
 
+#if already downloaded texas counties... 
+county48 <- st_read("~/Documents/_UCL_grad school/UCL/Dis/trial_project/Data/tl_2020_48_county20.shp")
+
+qtm(county48)
 ```
+
+
+
 
 # Context questions to answer: 
   - Why Houston? Did Dallas too
@@ -97,6 +103,10 @@ boundary_with_buffer <- st_buffer(city_boundary$geometry, 10000)
 #TODO: Want the entire tract area of the ones that intersect... 
 tracts_intersect_buffer <- texas_tracts[st_intersects(texas_tracts, boundary_with_buffer) %>% lengths > 0,]
  #<- st_intersection(texas_tracts, boundary_with_buffer)
+
+tracts_intersect_city <- texas_tracts[st_intersects(texas_tracts, city_boundary) %>% lengths > 0,]
+
+
 ```
 
 #lets map them overlaid to see where the city covers the texas census tracts 
@@ -105,7 +115,7 @@ tracts_intersect_buffer <- texas_tracts[st_intersects(texas_tracts, boundary_wit
 
 ggplot() +  geom_sf(data = texas_tracts, aes(geometry = geometry)) +
  #  geom_sf(data = boundary_with_buffer, aes(geometry = geometry)) +
-   geom_sf(data = tracts_intersect_buffer, fill = "red", aes(geometry = geometry)) 
+   geom_sf(data = city_boundary, fill = "red", aes(geometry = geometry)) 
 
 ```
 
@@ -113,7 +123,7 @@ Proceed with just mapping the tracts and the overlay of the 'place' boundary
 
 Plot the buffer with the boundary too 
 ```{r}
-ggplot()  +  geom_sf(data = tracts_intersect_buffer, color = "grey", fill = NA, aes(geometry = geometry)) + 
+ggplot()  +  geom_sf(data = tracts_intersect_city, color = "grey", fill = NA, aes(geometry = geometry)) + 
     geom_sf(data = city_boundary, fill = "red", color= "red", alpha = 0.1, aes(geometry = geometry)) + 
   theme_void()
 
@@ -194,6 +204,7 @@ ggplot() + geom_sf(data = merged_tract_tx_geo, aes(fill = housing_density, geome
   theme_void() + 
     scale_fill_distiller(palette="YlGn" , direction = 1)
 ```
+
 ```{r}
 ggplot() + geom_sf(data = merged_tract_tx_geo, aes(fill = unit_growth_density_2010, geometry = geometry),  lwd = 0)  +
   theme_void() + 

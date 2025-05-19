@@ -3,11 +3,10 @@ title: "Census_Data_pull"
 output: html_document
 date: "2025 Spring"
 ---
-Script to pull Census Data and map 
+Script to pull Census Data and map
+Map the state of texas and also analyse the counties... 
 
 ```{r}
-# Save census API key
-API_Key = '83a719c9a57b7c2fedd093f9a0108fcf8bf552eb'
 
 ```
 
@@ -29,205 +28,14 @@ library(ggplot2)
 library(dplyr)
 library(tmap)
 library(sf)
-```
-
-Get full list of variables in each year.
-Full list of variables available at this URL : https://api.census.gov/data/2023/acs/acs5/profile/variables.html 
-```{r}
-acs13 <- load_variables(year = 2013,
-                        dataset = "acs5", 
-                        cache = TRUE)
+library(terra)
 ```
 
 
 ```{r}
-acs18 <- load_variables(year = 2018,
-                        dataset = "acs5", 
-                        cache = TRUE)
-```
+#pull in the dataset if not generated...
 
-```{r}
-acs23 <- load_variables(year = 2023,
-                        dataset = "acs5", 
-                        cache = TRUE)
-```
-
-
-```{r}
-# Load variables from ACS 5-year profile
-acs23_profile <- load_variables(year = 2023,
-                        dataset = "acs5/profile", 
-                        cache = TRUE)
-```
-
-Pull population for Texas 
-The population was 29,640,343 in 2023 and 25,639,373 in 2013.
-
-```{r}
-tx_pop <- get_acs(geography = "state",
-                     variables = c("DP05_0001"),
-                     state = "TX",
-                     survey = "acs5",
-                     year = 2023)
-
-tx_pop13 <- get_acs(geography = "state",
-                     variables = c("DP05_0001"),
-                     state = "TX",
-                     survey = "acs5",
-                     year = 2013)
-```
-The total number of housing units in 2023 was 11,890,808.
- In 2013, it was 10,070,703.
-```{r}
-tx_units <- get_acs(geography = "state",
-                     variables = c("DP05_0091"),
-                     state = "TX",
-                     survey = "acs5",
-                     year = 2023)
-
-
-tx_units13 <- get_acs(geography = "state",
-                     variables = c("DP04_0001"),
-                     state = "TX",
-                     survey = "acs5",
-                     year = 2013)
-```
-```{r}
-# median home value  2023 $260,400 
-tx_value <- get_acs(geography = "state",
-                     variables = c("B25077_001"),
-                     state = "TX",
-                     survey = "acs5",
-                     year = 2023)
-
-# median homevalue 2013 128900
-tx_value13 <- get_acs(geography = "state",
-                     variables = c("B25077_001"),
-                     state = "TX",
-                     survey = "acs5",
-                     year = 2013)
-
-value_change <- (tx_value$estimate - tx_value13$estimate )*100 / tx_value13$estimate
-  
-value_change
-```
-
-
-Pull ACS data from 2023
-```{r}
-# FETCH the data 
-# DP05_0001 Total population 
-# DP05_0091 number of housing units  # can confirm this is the same as total housing units (DP04)
-# DP04_0001E total housing units in 2013 and 2023 but is depending on housing characteristics
-# B25077_001 Median home value
-# B07101_001E is the number of movers from another region... 
-
-county_tx_pop <- get_acs(geography = "county",
-                     variables = c("DP05_0001"),
-                     state = "TX",
-                     survey = "acs5",
-                     year = 2023)
-
-county_tx_hunit <- get_acs(geography = "county",
-                 variables = c("DP05_0091"),
-                state = "TX",
-              #  county = 201,
-                survey = "acs5",
-                year = 2023)
-
-county_tx_median_value <- get_acs(geography = "county",
-                 variables = c("B25077_001"),
-                state = "TX",
-              #  county = 201,
-                survey = "acs5",
-                year = 2023)
-# DP04_0001 2023
-county_tx_hunit_occ <- get_acs(geography = "county",
-                 variables = c("DP04_0001"),
-                state = "TX",
-              #  county = 201,
-                survey = "acs5",
-                year = 2023) 
-
-#all NA values... hmmm? 
-# county_tx_movers <- get_acs(geography = "county",
-#                  variables = c("B07101_001"),
-#                 state = "TX",
-#               #  county = 201,
-#                 survey = "acs5",
-#                 year = 2023)
-#
-```
-
-Let's look at 10 years ago
-```{r}
-county_tx_pop_2013 <- get_acs(geography = "county",
-                     variables = "DP05_0001",
-                     state = "TX",
-                     survey = "acs5",
-                     year = 2013)
-
-county_tx_hunit_2013 <- get_acs(geography = "county", 
-                 variables = c("DP04_0001"),
-                state = "TX",
-              #  county = 201,
-                survey = "acs5",
-                year = 2013)
-
-county_tx_median_value_2013 <- get_acs(geography = "county",
-                 variables = c("B25077_001"),
-                state = "TX",
-              #  county = 201,
-                survey = "acs5",
-                year = 2013)
-
-```
-
-Remove the variables we don't need and merge to create the dataset 
-```{r}
-county_tx_pop <- county_tx_pop %>% select(., c("GEOID", "NAME", estimate )) %>%
-  rename(., population23 = estimate) 
-
-county_tx_hunit <- county_tx_hunit %>% select(., c("GEOID", estimate )) %>%
-  rename(., housing_unit23 = estimate) 
-  
-county_tx_median_value <- county_tx_median_value %>% select(., c("GEOID", estimate )) %>%
-  rename(., median_value23 = estimate) 
-
-county_tx_hunit_occ <- county_tx_hunit_occ %>% select(., c("GEOID", estimate )) %>%
-  rename(., unit_occ23 = estimate) 
-
-county_tx_pop_2013 <- county_tx_pop_2013 %>% select(., c("GEOID", estimate )) %>%
-  rename(., population13 = estimate) 
-
-county_tx_hunit_occ_2013 <- county_tx_hunit_2013 %>% select(., c("GEOID", estimate )) %>%
-  rename(., unit_occ13 = estimate) 
-
-county_tx_median_value_2013 <- county_tx_median_value_2013 %>% select(., c("GEOID", estimate)) %>%
-  rename(., median_value13 = estimate) 
-
-
-merged_census_tx <- county_tx_pop %>%
-    left_join(., county_tx_hunit, 
-            by = c("GEOID" = "GEOID")) %>% 
-    left_join(., county_tx_median_value, 
-            by = c("GEOID" = "GEOID")) %>% 
-    left_join(., county_tx_hunit_occ, 
-            by = c("GEOID" = "GEOID")) %>%
-    left_join(., county_tx_pop_2013, 
-            by = c("GEOID" = "GEOID")) %>%
-    left_join(., county_tx_hunit_occ_2013, 
-            by = c("GEOID" = "GEOID")) %>%
-   left_join(., county_tx_median_value_2013, 
-            by = c("GEOID" = "GEOID"))
-  
-```
-
-```{r}
-#save the dataset as a CSV 
-write.csv(merged_census_tx, "~/Documents/_UCL_grad school/UCL/Dis/trial_project/Data/save_census_data_county.csv") 
-
-summary(merged_census_tx)
+merged_census_tx <- read.csv("~/Documents/_UCL_grad school/UCL/Dis/trial_project/Data/save_census_data_county_2000_10_20.csv")
 ```
 
 TODO: #could also calculate a population or housing unit density.. 
@@ -239,37 +47,32 @@ Perform calculations to find the change in variables over 10 years
 
 merged_census_tx <- merged_census_tx %>%
   mutate(popchange10 = 
-  (merged_census_tx$population23 - merged_census_tx$population13)*100 / merged_census_tx$population13) %>%
-  mutate(unitchange10 = (unit_occ23 - unit_occ13)*100 / unit_occ13) %>%
-   mutate(valuechange10 = (median_value23 - median_value13)*100 / median_value13) %>%
-  
-  merged_census_tx <- merged_census_tx %>% mutate(area = st_area(merged_census_tx$geometry))
+  (merged_census_tx$population20 - merged_census_tx$population10)*100 / merged_census_tx$population10)%>%
+  mutate(unitchange10 = (housing_unit20 - housing_unit10)*100 / housing_unit10)
 
-  merged_census_tx <- merged_census_tx %>% mutate(pop_density = population23/st_area(merged_census_tx$geometry))
+ # merged_census_tx <- merged_census_tx %>% mutate(area = st_area(merged_census_tx$geometry))
 
-  
-
-
+#  merged_census_tx <- merged_census_tx %>% mutate(pop_density = #population23/st_area(merged_census_tx$geometry))
 ```
 
 
 
 ```{r}
-pairs(merged_census_tx %>% select(3:12))
+#create a matrix plot of scatter plots to briefly understand the relationships between variables
+#pairs(merged_census_tx %>% select(4:13))
 ```
 
 #visualize the population by county, shows there are very few with a big population... 
-```{r}
-merged_census_tx %>%
-  ggplot(aes(y = population23, x = reorder(NAME, population23))) +
-  geom_point()
-```
+# {r}
+# merged_census_tx %>%
+#   ggplot(aes(y = population23, x = reorder(NAME, population23))) +
+#   geom_point()
 
 Plot the growth over 10 years 
 ```{r}
-merged_census_tx %>%
-  ggplot(aes(y = popchange10, x = reorder(NAME, popchange10))) +
-  geom_point()
+# merged_census_tx %>%
+#   ggplot(aes(y = popchange10, x = reorder(NAME, popchange10))) +
+#   geom_point()
 ```
 Find five fastest growing counties since 2013
 
@@ -278,7 +81,7 @@ Find five fastest growing counties since 2013
 #TODO: put the 2013 estimate on the dataframe... 
 summary(merged_census_tx$popchange10)
 #which values were these? 
-tail(merged_texas[order(merged_texas$popchange10), ], 5)
+tail(merged_census_tx[order(merged_census_tx$popchange10), ], 7)
 
 ```
 
@@ -286,20 +89,8 @@ tail(merged_texas[order(merged_texas$popchange10), ], 5)
 Load in geography 
 
 ```{r}
-# Get counties 
-download.file("https://www2.census.gov/geo/tiger/TIGER2020PL/LAYER/COUNTY/2020/tl_2020_48_county20.zip", 
-              destfile="Data/county_shape_48.zip")
 
-county48 <-fs::dir_info(here::here("Data"  
-                                 ))%>%  #$ means exact match
-  dplyr::filter(str_detect(path, 
-                           "tl_2020_48_county20.shp$"))%>%
-  dplyr::select(path)%>%
-  dplyr::pull()%>%
-  
-  sf::st_read() %>%
-  st_transform(., 4326)
-
+#if already downloaded texas counties... 
 county48 <- st_read("~/Documents/_UCL_grad school/UCL/Dis/trial_project/Data/tl_2020_48_county20.shp")
 
 qtm(county48)
@@ -309,45 +100,49 @@ let's use ggplot2 to visualise...
 
 ```{r}
 # create a merged dataset with the geometry... 
+merged_census_tx$GEOID <- as.character(merged_census_tx$GEOID)
+
 texas_geo_subset <- county48 %>% select("GEOID20", "geometry")
 merged_texas <- merged_census_tx %>%
   left_join(texas_geo_subset, by = c("GEOID" = "GEOID20"))
 
-
-
-
 ```
 
+#Plot the percent change of population across Counties
 ```{r}
 ggplot(merged_texas) +
   geom_sf(aes(fill = popchange10, geometry = geometry)) +
     labs(
     title = "Population Change Across Texas Counties",
-    subtitle = "Percent Change of 2013 to 2023",
-    caption = "Data: American Community Survey"
+    subtitle = "Percent Change from 2010 to 2020",
+    caption = "Data: American Community Survey",
+     fill = "Percent Population Change"
   ) +
   theme_classic() +
   scale_fill_distiller(palette="YlGn" , direction = 1)
 ```
+
 ```{r}
 ggplot(merged_texas) +
   geom_sf(aes(fill = unitchange10, geometry = geometry)) +
     labs(
     title = "Housing Unit Change Across Texas Counties",
-    subtitle = "Percent Change of 2013 to 2023",
-    caption = "Data: American Community Survey"
+    subtitle = "Percent Change from 2010 to 2020",
+    caption = "Data: American Community Survey", 
+     fill = "Percent Unit Change"
   ) +
   theme_classic() +
   scale_fill_distiller(palette="YlGn" , direction = 1) 
 ```
+
 ```{r}
 #Questions: where did population grow and housing units did not?
 #where did population grow and how did that compare to risk?
 
 #which are the counties with the highest population change and highest risk score? 
-highest_pop_change <- tail(merged_texas[order(merged_texas$popchange10), ], 5)
-highest_unit_change <- tail(merged_texas[order(merged_texas$unitchange10), ], 5)
-highest_value_change <- tail(merged_texas[order(merged_texas$valuechange10, na.last = FALSE), ], 5)
+highest_pop_change <- tail(merged_texas[order(merged_texas$popchange10), ], 7)
+highest_unit_change <- tail(merged_texas[order(merged_texas$unitchange10), ], 7)
+#highest_value_change <- tail(merged_texas[order(merged_texas$valuechange10, na.last = FALSE), ], 5)
 
 top_quintile_pop_change <- tail(merged_texas[order(merged_texas$popchange10), ], round(count(merged_texas) / 5)[[1]])
 
@@ -360,14 +155,99 @@ highest_unit_change
 #map again 
 ggplot() +
   geom_sf(data= merged_texas, aes(fill = popchange10, geometry = geometry)) +
-    geom_sf(data= highest_pop_change, aes(color = "red",fill = popchange10, geometry = geometry)) +
+    geom_sf(data= highest_pop_change, aes(color = NAME, fill = popchange10, geometry = geometry)) +
     labs(
     title = "Population Change Across Texas Counties",
-    subtitle = "Percent Change of 2013 to 2023, top five outlined in red",
-    caption = "Data: American Community Survey"
-  ) +
+    subtitle = "Percent Change of 2010 to 2020, top seven outlined in red",
+    caption = "Data: American Community Survey", 
+    fill=  "Percent Population Change", 
+    color = "Counties") +
   theme_classic() +
   scale_fill_distiller(palette="YlGn" , direction = 1)
+```
+
+```{r}
+#TODO next: 
+# map the climate indexes and the real estate prices
+# try mapping only an area but down to the tract level (ie. Houston and Harriscounty or sth...)
+  # then try doing some correlation? 
+
+#Write up some introduction? 
+```
+
+Load in the National Risk INDEX (NRI)
+```{r}
+NRI_dictionary <- read_csv("~/Documents/_UCL_grad school/UCL/Dis/NRI_Table_Counties_Texas/NRIDataDictionary.csv")
+```
+
+```{r}
+NRI_info <- read_csv("~/Documents/_UCL_grad school/UCL/Dis/NRI_Table_Counties_Texas/NRI_HazardInfo.csv")
+
+NRI_tx <- read_csv("~/Documents/_UCL_grad school/UCL/Dis/NRI_Table_Counties_Texas/NRI_Table_Counties_Texas.csv")
+```
+#TODO: 
+  Some additional questions: 
+  - what is the distribution of the risk_score?  --> assuming its normalized to fit a 0-100 scale? 
+  - how does population compare to the population from ACS? Very similar 
+  - distribution of buildvalue? 
+```{r}
+
+NRI_tx_small <- NRI_tx %>% select("COUNTY", "COUNTYTYPE", "COUNTYFIPS", "STCOFIPS", "POPULATION", "BUILDVALUE",
+                                  "AGRIVALUE", "RISK_VALUE", "RISK_SCORE", "EAL_VALB" ,"ALR_VALB") %>%
+              mutate( STCOFIPS = as.character(STCOFIPS))
+#could add additional variables about expected loss
+```
+
+
+```{r}
+summary(NRI_tx_small)
+print(mean(NRI_tx_small$RISK_VALUE))
+```
+
+```{r}
+ggplot(NRI_tx_small, aes(x=RISK_VALUE)) + geom_histogram(binwidth=10000, colour="black", fill="white")
+
+
+ggplot(NRI_tx_small, aes(x=RISK_SCORE)) + geom_histogram(binwidth=10, colour="black", fill="white")
+
+
+
+```
+Whats the distribution for the building loss rate? 
+Percentage of total building value 
+```{r}
+ggplot(NRI_tx_small, aes(x=ALR_VALB)) + geom_histogram(binwidth=.00010, colour="black", fill="white")
+
+```
+
+```{r}
+#create dataset with the subset of NRI variables
+merged_texas <- merged_texas %>%
+            left_join(NRI_tx_small, by = c("GEOID"= "STCOFIPS"))
+       #      %>% select(., c("iso3", "country", "hdicode", "region",  "gii_2019", "gii_2020")) 
+```
+
+###create dataset with all the NRI variables so I can map them... 
+```{r}
+merged_texas_all_NRI <- merged_texas %>%
+            left_join(NRI_tx %>% mutate( STCOFIPS = as.character(STCOFIPS)), by = c("GEOID"= "STCOFIPS"))
+       #      %>% select(., c("iso3", "country", "hdicode", "region",  "gii_2019", "gii_2020")) 
+```
+
+
+```{r}
+world_cites <- st_read("https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/World_Cities/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson") %>%
+  st_transform(., 4326)
+
+texas_cities <- world_cites %>% filter(., FIPS_CNTRY == "US" & ADMIN_NAME == "Texas")
+
+```
+
+```{r}
+q <- ggplot()+  geom_sf(data = texas_cities, aes(fill = "black", geometry = geometry )) + 
+  geom_sf_text(data = texas_cities, aes(label = CITY_NAME, geometry = geometry), position = position_nudge(x = 0.6, y = 0.2)) +
+ # geom_text(data = texas_cities, aes(label = CITY_NAME), size = 5) + 
+  theme_void()
 ```
 
 
@@ -429,14 +309,38 @@ high_scoring <- merged_texas[(merged_texas$unitchange10 >40 & merged_texas$RISK_
 ## Todo: add labels with the names of the cities... and then can we get the values? 
 ```{r}
 
-p <- ggplot() +
-  geom_sf(data = merged_texas, aes(fill = RISK_SCORE, geometry = geometry)) + 
+ggplot() +
+  geom_sf(data = merged_texas, aes(fill = RISK_SCORE, geometry = geometry)) +
   #geom_sf(data = texas_cities, aes(fill = "black", geometry = geometry)) 
 #    geom_sf_text(data = texas_cities, aes(label = CITY_NAME, geometry = geometry), position = position_nudge(x = 0.6, y = 0.2)) +
-      geom_sf(data= top_quintile_pop_change, aes(color = "red",fill = RISK_SCORE, geometry = geometry)) +
+  #    geom_sf(data= top_quintile_pop_change, aes(color = "red",fill = RISK_SCORE, geometry = geometry)) +
 labs(
     title = "Risk Score Across Texas Counties",
-    subtitle = "Climate Event Risk Index March 2023, Counties in top Quintile of population growth in red",
+    subtitle = "National Risk Index March 2023",
+    caption = "Data: FEMA National Risk Index | US Census", 
+    fill = "Risk Score"
+  ) + 
+  theme(
+    plot.title = element_text(size = 24, hjust = 0.5)
+  ) +
+    theme_classic() +
+  scale_fill_distiller(palette="YlGn" , direction = 1) 
+
+```
+
+#create additional maps of the hazard scores.. .using merged_texas_all_NRI
+```{r}
+#EAL_VALT - total expected annual loss
+#VARIABLE = CLFD_EALB
+
+ggplot() +
+  geom_sf(data = merged_texas_all_NRI, aes(fill = ALR_VALA, geometry = geometry)) +
+  #geom_sf(data = texas_cities, aes(fill = "black", geometry = geometry)) 
+#    geom_sf_text(data = texas_cities, aes(label = CITY_NAME, geometry = geometry), position = position_nudge(x = 0.6, y = 0.2)) +
+    #  geom_sf(data= top_quintile_pop_change, aes(color = "red",fill = RISK_SCORE, geometry = geometry)) +
+labs(
+    title = "Coastal Flooding Risk Across Texas Counties",
+    subtitle = "National Risk Index March 2023, Counties in top Quintile of population growth in red",
     caption = "Data: FEMA National Risk Index | ESRI"
   ) + 
   theme(
@@ -445,13 +349,10 @@ labs(
     theme_classic() +
   scale_fill_distiller(palette="YlGn" , direction = 1) 
 
-
 ```
 
-```{r}
-p
-```
-Autocorrelation for the whole state of texas and the counties... 
+
+Autocorrelation NRI for the whole state of texas and the counties... 
 ```{r}
 library(spdep)
 
@@ -501,6 +402,7 @@ G_LWard_Global_Density <-
 
 G_LWard_Global_Density
 ```
+
 ```{r}
 Gi_LWard_Local_Density <- merged_texas %>%
   pull(RISK_SCORE) %>%
@@ -538,7 +440,8 @@ ggplot() +
   labs(
     title = "Risk Score Autocorrelation Across Texas Counties",
     subtitle = "Climate Event Risk Index March 2023",
-    caption = "Data: FEMA National Risk Index | ESRI"
+    caption = "Data: FEMA National Risk Index | US Census", 
+    fill = "Density Metric"
   ) + 
   theme(
     plot.title = element_text(size = 24, hjust = 0.5)
@@ -576,114 +479,208 @@ ggplot() +
 <!-- ``` -->
 
 
-<!-- ```{r} -->
-<!-- print(mean(merged_texas$popchange10)) #1.47  -->
-<!-- print(sd(merged_texas$popchange10)) # 16 -->
-<!-- merged_texas$popchange10z <- (merged_texas$popchange10-mean(merged_texas$popchange10))/sd(merged_texas$popchange10) -->
+```{r}
+print(mean(merged_texas$popchange10)) #6.551286
+print(sd(merged_texas$popchange10)) # 17.05852
+merged_texas$popchange10z <- (merged_texas$popchange10-mean(merged_texas$popchange10))/sd(merged_texas$popchange10)
 
-<!-- ``` -->
+```
 
+## Try to map the z score or standard deviation... 
 ```{r}
 ggplot() +
   geom_sf(data = merged_texas, aes(fill = popchange10z, geometry = geometry)) +
 #  geom_sf(data = texas_cities, aes(fill = "black", geometry = geometry )) +
-  theme_void() +
+  theme_classic() +
   labs(
     title = "Population Change Across Texas Counties",
-    subtitle = "Standard deviation of 2013 to 2023",
-    caption = "Data: American Community Survey"
+    subtitle = "Standard deviation of 2010 to 2020",
+    caption = "Data: American Community Survey",
+    fill = "Standard Deviation"
+  ) + 
+   theme(
+    plot.title = element_text(size = 24, hjust = 0.5)
+  ) +
+    theme_classic() +
+  scale_fill_distiller(palette="YlGn" , direction = 1) 
+```
+
+#Autocorrelation of population change 2010 to 2020
+```{r}
+#Can reuse the neighbors list from above because geometry isnt changing
+
+#calculate density based on popchange10
+I_LWard_Global_Density_pop <- merged_texas %>%
+  pull(popchange10) %>%
+  as.vector()%>%
+  moran.test(., Lward.lw)
+
+I_LWard_Global_Density_pop
+
+
+G_LWard_Global_Density_pop <- 
+  merged_texas %>%
+  pull(popchange10) %>%
+  as.vector()%>%
+  globalG.test(., Lward.lw)
+
+G_LWard_Global_Density_pop
+```
+
+```{r}
+Gi_LWard_Local_Density_pop <- merged_texas %>%
+  pull(popchange10) %>%
+  as.vector()%>%
+  localG(., Lward.lw)
+
+head(Gi_LWard_Local_Density_pop)
+
+merged_texas <- merged_texas %>%
+  mutate(density_G_pop = as.numeric(Gi_LWard_Local_Density_pop))
+```
+
+#Map the GI autocorrelation for population change
+
+```{r}
+GIColours<- rev(brewer.pal(8, "RdBu"))
+
+breaks1<-c(-1000,-2.58,-1.96,-1.65,1.65,1.96,2.58,1000)
+
+
+ggplot() +
+  geom_sf(data = merged_texas, aes(fill = density_G_pop, geometry = geometry)) +
+  labs(
+    title = "Population Change Autocorrelation Across Texas Counties",
+    subtitle = "Population Change 2010-2020",
+    caption = "Data: US Census", 
+    fill = "Density Metric"
   ) + 
   theme(
     plot.title = element_text(size = 24, hjust = 0.5)
+  ) +
+    theme_classic() +
+  scale_fill_distiller(palette="YlGn" , direction = 1) 
+```
+
+#Autocorrelation of HOUSING change 2010 to 2020
+```{r}
+#Can reuse the neighbors list from above because geometry isnt changing
+
+#calculate density based on unitchange10
+I_LWard_Global_Density_unit <- merged_texas %>%
+  pull(unitchange10) %>%
+  as.vector()%>%
+  moran.test(., Lward.lw)
+
+I_LWard_Global_Density_unit
+
+
+G_LWard_Global_Density_unit <- 
+  merged_texas %>%
+  pull(unitchange10) %>%
+  as.vector()%>%
+  globalG.test(., Lward.lw)
+
+G_LWard_Global_Density_unit
+```
+
+```{r}
+Gi_LWard_Local_Density_unit <- merged_texas %>%
+  pull(unitchange10) %>%
+  as.vector()%>%
+  localG(., Lward.lw)
+
+head(Gi_LWard_Local_Density_unit)
+
+merged_texas <- merged_texas %>%
+  mutate(density_G_unit = as.numeric(Gi_LWard_Local_Density_unit))
+```
+
+
+
+#Map the GI autocorrelation for population change
+
+```{r}
+GIColours<- rev(brewer.pal(8, "RdBu"))
+
+breaks1<-c(-1000,-2.58,-1.96,-1.65,1.65,1.96,2.58,1000)
+
+
+ggplot() +
+  geom_sf(data = merged_texas, aes(fill = density_G_unit, geometry = geometry)) +
+  labs(
+    title = "Housing Unit Change Autocorrelation Across Texas Counties",
+    subtitle = "Housing Unit Change 2010-2020",
+    caption = "Data: US Census", 
+    fill = "Density Metric"
+  ) + 
+  theme(
+    plot.title = element_text(size = 24, hjust = 0.5)
+  ) +
+    theme_classic() +
+  scale_fill_distiller(palette="YlGn" , direction = 1) 
+```
+
+
+#Put together some line graphs... 
+```{r}
+highest_pop_change_graph <- highest_pop_change %>%
+  select(., c("NAME", "population00", "population10", "population20"))
+#rename some of the columns
+highest_pop_change_graph <-  rename(highest_pop_change_graph, "County" = "NAME", 
+        "2000" = "population00", "2010" = "population10", "2020" = "population20")
+
+
+highest_unit_change_graph <- highest_unit_change %>%
+  select(., c("NAME", "housing_unit00", "housing_unit10", "housing_unit20"))
+
+highest_unit_change_graph <-  rename(highest_unit_change_graph, "County" = "NAME",
+        "2000" = "housing_unit00", "2010" = "housing_unit10", "2020" = "housing_unit20")
+ 
+
+highest_unit_change_graph
+```
+
+```{r}
+highest_pop_change_pivoted <- highest_pop_change_graph %>%
+  pivot_longer(!County, names_to = "year", values_to = "population") %>%
+    mutate(population  = population / 1000)
+highest_pop_change_pivoted
+```
+
+```{r}
+#pivot table and divide unit count by thousands
+highest_unit_change_pivoted <- highest_unit_change_graph %>%
+  pivot_longer(!County, names_to = "year", values_to = "housing_units") %>%
+  mutate(housing_units  = housing_units / 1000)
+highest_unit_change_pivoted
+```
+
+# Line graph of population ove time 
+Todo: Add a Title and colors... 
+```{r}
+ggplot(highest_pop_change_pivoted, aes(x = year, y = population, group = County))  + 
+  geom_line(aes(color=County)) + 
+  geom_point(aes(color=County)) + 
+  theme_minimal() + 
+  labs(
+    title = "Fastest Growing Texas Counties by Population",
+    x =  "Year", y = "Population (1000s)",
+    subtitle = "US Census 2000-2020",
+    #caption = "Data: US Census"
   )
 ```
 
 ```{r}
-#TODO next: 
-# map the climate indexes and the real estate prices
-# try mapping only an area but down to the tract level (ie. Houston and Harriscounty or sth...)
-  # then try doing some correlation? 
-
-#Write up some introduction? 
+ggplot(highest_unit_change_pivoted, aes(x = year, y = housing_units, group = County))  + 
+  geom_line(aes(color=County)) + 
+  geom_point(aes(color=County)) + 
+  theme_minimal() + 
+  labs(
+    title = "Fastest Growing Texas Counties by Housing Units",
+    x =  "Year", y = "Housing Units (1000s)",
+    subtitle = "US Census 2000-2020",
+    #caption = "Data: US Census"
+  )
 ```
 
-Load in the National Risk INDEX (NRI)
-```{r}
-NRI_dictionary <- read_csv("~/Documents/_UCL_grad school/UCL/Dis/NRI_Table_Counties_Texas/NRIDataDictionary.csv")
-```
-
-```{r}
-NRI_info <- read_csv("~/Documents/_UCL_grad school/UCL/Dis/NRI_Table_Counties_Texas/NRI_HazardInfo.csv")
-
-NRI_tx <- read_csv("~/Documents/_UCL_grad school/UCL/Dis/NRI_Table_Counties_Texas/NRI_Table_Counties_Texas.csv")
-```
-#TODO: 
-  Some additional questions: 
-  - what is the distribution of the risk_score?  --> assuming its normalized to fit a 0-100 scale? 
-  - how does population compare to the population from ACS? Very similar 
-  - distribution of buildvalue? 
-```{r}
-
-NRI_tx_small <- NRI_tx %>% select("COUNTY", "COUNTYTYPE", "COUNTYFIPS", "STCOFIPS", "POPULATION", "BUILDVALUE",
-                                  "AGRIVALUE", "RISK_VALUE", "RISK_SCORE", "EAL_VALB" ,"ALR_VALB") %>%
-              mutate( STCOFIPS = as.character(STCOFIPS))
-#could add additional variables about expected loss
-```
-
-
-```{r}
-summary(NRI_tx_small)
-print(mean(NRI_tx_small$RISK_VALUE))
-```
-
-```{r}
-ggplot(NRI_tx_small, aes(x=RISK_VALUE)) + geom_histogram(binwidth=10000, colour="black", fill="white")
-
-
-ggplot(NRI_tx_small, aes(x=RISK_SCORE)) + geom_histogram(binwidth=10, colour="black", fill="white")
-
-
-
-```
-Whats the distribution for the building loss rate? 
-Percentage of total building value 
-```{r}
-ggplot(NRI_tx_small, aes(x=ALR_VALB)) + geom_histogram(binwidth=.00010, colour="black", fill="white")
-
-```
-
-```{r}
-merged_texas <- merged_texas %>%
-            left_join(NRI_tx_small, by = c("GEOID"= "STCOFIPS"))
-       #      %>% select(., c("iso3", "country", "hdicode", "region",  "gii_2019", "gii_2020")) 
-```
-
-```{r}
-world_cites <- st_read("https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/World_Cities/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson") %>%
-  st_transform(., 4326)
-
-texas_cities <- world_cites %>% filter(., FIPS_CNTRY == "US" & ADMIN_NAME == "Texas")
-
-```
-
-```{r}
-q <- ggplot()+  geom_sf(data = texas_cities, aes(fill = "black", geometry = geometry )) + 
-  geom_sf_text(data = texas_cities, aes(label = CITY_NAME, geometry = geometry), position = position_nudge(x = 0.6, y = 0.2)) +
- # geom_text(data = texas_cities, aes(label = CITY_NAME), size = 5) + 
-  theme_void()
-```
-
-```{r}
-q
-```
-
-
-
-Compare the population from NRI to population estimate 2023 from ACS 
-#Tried and wasn't that helpful: graph the population 2013 versus 2023 
-
-```{r}
-ggplot() + geom_line(aes(x=merged_texas$POPULATION,y=merged_texas$popestimate2023),color='red') +
-    ylab('ACS 2023 Population Estimate')+xlab('FEMA Population 2020')
-
-```
