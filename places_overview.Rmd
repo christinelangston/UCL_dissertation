@@ -1,0 +1,116 @@
+---
+title: "Places analysis..."
+output: html_notebook
+---
+#analyse places that are growing in texas and map their location within the state... 
+  #script to create a few line charts... 
+
+# really nice article about ggplot library 
+  https://www.sthda.com/english/wiki/ggplot2-line-plot-quick-start-guide-r-software-and-data-visualization 
+# Load in Libraries
+
+```{r}
+library(tidycensus)
+library(tidyverse)
+library(choroplethr)
+library(choroplethrMaps)
+library(ggplot2)
+library(dplyr)
+library(tmap)
+library(sf)
+library(terra)
+```
+
+# Load in the data file 
+```{r}
+places_tx <- read.csv("~/Documents/_UCL_grad school/UCL/Dis/trial_project/Data/save_census_data_places.csv")
+
+places <- st_read("~/Documents/_UCL_grad school/UCL/Dis/trial_project/Data/tl_2024_48_place/tl_2024_48_place.shp") %>% st_transform(., 4326)
+
+
+```
+
+#Section the dataset by population and by housing to then graph it ... 
+```{r}
+places_pop_change <- places_tx %>%
+  select(., c("NAME", "pop00", "pop10", "pop20")) %>%
+  mutate(pop_change10 = pop20 - pop10, pop_change_pct10 = (pop20 - pop10)*100  / pop10) %>%
+    mutate(pop_change20 = pop20 - pop00, pop_change_pct20 = (pop20 - pop00)*100  / pop00)
+
+
+#rename some of the columns
+places_pop_change <-  rename(places_pop_change, "County" = "NAME", 
+        "2000" = "pop00", "2010" = "pop10", "2020" = "pop20")
+
+places_pop_change$County <- sub(", Texas","", places_pop_change$County)
+
+#sort by top population 
+tail(places_pop_change[order(places_pop_change$"2020", na.last = FALSE), ], 10)
+
+#sort by pop_change and find the 10 top places with fastest rate of change... 
+highest_places_pop_change <- tail(places_pop_change[order(places_pop_change$pop_change10, na.last = FALSE), ], 10)
+
+
+places_pop_change_pivoted <- highest_places_pop_change %>%
+  select(., c("County", "2000", "2010", "2020")) %>%
+  pivot_longer(!County, names_to = "year", values_to = "population") %>%
+    mutate(population  = population / 1000)
+```
+
+```{r}
+ggplot(places_pop_change_pivoted, aes(x = year, y = population, group = County))  + 
+  geom_line(aes(color=County)) + 
+  geom_point(aes(color=County)) + 
+  theme_minimal() + 
+  #scale_color_brewer(palette="Greens") + 
+  labs(
+    title = "Fastest Growing Texas Places by Population",
+    x =  "Year", y = "Population (1000s)",
+    subtitle = "US Census 2000-2020",
+    #caption = "Data: US Census"
+  )
+```
+
+
+Map these places on the Texas map 
+```{r}
+county48 <- st_read("~/Documents/_UCL_grad school/UCL/Dis/trial_project/Data/tl_2020_48_county20.shp")
+
+qtm(county48)
+
+# take county 48 and put the polygons together... 
+outline <- st_union(county48$geometry)
+
+outline <- st_simplify(outline)
+
+outline
+```
+
+
+```{r}
+## df_new <- df %>% filter(team %in% team_names)
+places_highest_growth <- highest_places_pop_change$County 
+
+
+#need to make the places highest growth change... 
+places_short <- places %>% filter(., NAMELSAD %in% places_highest_growth)
+
+```
+
+```{r}
+highest_places_pop_change
+```
+
+
+```{r}
+ggplot() + geom_sf(data = outline, aes( geometry = geometry)) + 
+  geom_sf(data = places_short, aes(fill = NAME, geometry = geometry)) + 
+    theme_minimal() +
+ # scale_fill_brewer(palette="YlGn" , direction = -1) + 
+  labs(
+    title = "Texas with Fastest Growing Places",
+    caption = "Data: US Census", 
+    fill = "Place")
+  #  color = none)
+```
+

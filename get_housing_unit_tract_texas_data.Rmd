@@ -8,7 +8,25 @@ Output:
 - 'save_census_data_tract.csv' 
 
 ```{r}
-#lets try querying a few more moving variables to estimate how many people have moved...?
+# Save census API key, at least needed for the third dataset... 
+API_Key = '83a719c9a57b7c2fedd093f9a0108fcf8bf552eb'
+
+```
+
+```{r}
+library(tidycensus)
+library(tidyverse)
+library(choroplethr)
+library(choroplethrMaps)
+library(ggplot2)
+library(dplyr)
+library(tmap)
+library(sf)
+```
+
+#Dataset 1  - Census Tracts 2023 - units and year built 
+```{r}
+#Let's try querying a few more moving variables to estimate how many people have moved...?
 #B07013_013E - has to do with moved in last year...
 #
 #B25034_001E total number of units I think ? 
@@ -20,21 +38,21 @@ tract_tx_new20 <- get_acs(geography = "tract",
                 state = "TX",
               #  county = 201,
                 survey = "acs5",
-                year = 2023)
+                year = 2020)
 
 tract_tx_new10 <- get_acs(geography = "tract",
                  variables = c("B25034_003"),
                 state = "TX",
               #  county = 201,
                 survey = "acs5",
-                year = 2023)
+                year = 2020)
 
 tract_tx_total_hunit <- get_acs(geography = "tract",
                  variables = c("B25034_001"),
                 state = "TX",
               #  county = 201,
                 survey = "acs5",
-                year = 2023)
+                year = 2020)
 
 ```
 Lets join these together.... 
@@ -49,24 +67,27 @@ tract_tx_new20 <- tract_tx_new20 %>%
   rename(units_built_2020 = estimate)
 
 tract_tx_total_hunit <- tract_tx_total_hunit %>%
-  rename(total_units = estimate) %>%
+  rename(total_units_2020 = estimate) %>%
   left_join(., tract_tx_new10, by = c("GEOID" = "GEOID")) %>%
   left_join(., tract_tx_new20, by = c("GEOID" = "GEOID") )
 
 tract_tx_total_hunit <- tract_tx_total_hunit %>%
   mutate(units_built_since_2010 = (units_built_2010_19 + units_built_2020)) %>%
-  mutate(units_built_percent_since_2010 = (100*units_built_since_2010 / (total_units -units_built_since_2010)))
+  mutate(units_built_percent_since_2010 = (100*units_built_since_2010 / (total_units_2020 -units_built_since_2010)))
   
 
 head(tract_tx_total_hunit)
 ```
+
 ```{r}
-write.csv(tract_tx_total_hunit, "~/Documents/_UCL_grad school/UCL/Dis/trial_project/Data/housing_tract_census_tx.csv") 
+write.csv(tract_tx_total_hunit, "~/Documents/_UCL_grad school/UCL/Dis/trial_project/Data/housing_tract_census_tx_2020.csv") 
 ```
 
+
+#Dataset 2 
 Also get the data for population, etc... 
 
-# FETCH the data at Texas Tract levels: Population, Housing units, Median Home Value
+## FETCH the data at Texas Tract levels: Population, Housing units, Median Home Value
 
 ```{r}
 # DP05_0001 Total population 
@@ -76,51 +97,53 @@ Also get the data for population, etc...
 #tract_tx_pop <- 
 
 #population tract  
-tract_tx_pop <- get_acs(geography = "tract",
-                 variables = c("DP05_0001"),
-                state = "TX",
-              #  county = 201,
-                survey = "acs5",
-                year = 2023)
+# tract_tx_pop <- get_acs(geography = "tract",
+#                  variables = c("DP05_0001"),
+#                 state = "TX",
+#               #  county = 201,
+#                 survey = "acs5",
+#                 year = 2020)
+# 
+# tract_tx_hunit <- get_acs(geography = "tract",
+#                  variables = c("DP05_0091"),
+#                 state = "TX",
+#               #  county = 201,
+#                 survey = "acs5",
+#                 year = 2020)
 
-tract_tx_hunit <- get_acs(geography = "tract",
-                 variables = c("DP05_0091"),
-                state = "TX",
-              #  county = 201,
-                survey = "acs5",
-                year = 2023)
 
-tract_tx_median_value <- get_acs(geography = "tract",
-                 variables = c("B25077_001"),
+#but use the decennial not ACS 
+
+tract_tx_pop_2020 <- get_decennial(geography = "tract",
+                 variables = c("P1_001N"),
                 state = "TX",
-              #  county = 201,
-                survey = "acs5",
-                year = 2023)
+                year = 2020)
+
+tract_tx_hunit_2020 <- get_decennial(geography = "tract",
+                 variables = c("H1_001N"),
+                state = "TX",
+                year = 2020)
 ```
 
 
 ### Manipulate the data  and merge into one dataset
 ```{r}
 # drop unneeded columns
-tract_tx_pop <- tract_tx_pop %>% select(., c("GEOID", estimate )) %>%
-  rename(., population23 = estimate) 
+tract_tx_pop_2020 <- tract_tx_pop_2020 %>% select(., c("GEOID", value )) %>%
+  rename(., population20 = value) 
 
-tract_tx_hunit <- tract_tx_hunit %>% select(., c("GEOID", estimate )) %>%
-  rename(., housing_unit23 = estimate) 
+tract_tx_hunit_2020 <- tract_tx_hunit_2020 %>% select(., c("GEOID", value )) %>%
+  rename(., housing_unit20 = value) 
   
-tract_tx_median_value <- tract_tx_median_value %>% select(., c("GEOID", estimate )) %>%
-  rename(., median_value23 = estimate) 
+# tract_tx_median_value <- tract_tx_median_value %>% select(., c("GEOID", estimate )) %>%
+#   rename(., median_value20 = estimate) 
+# 
+# tract_tx_movers <- tract_tx_movers %>% select(., c("GEOID", estimate )) %>%
+#   rename(., movers20 = estimate) 
 
-tract_tx_movers <- tract_tx_movers %>% select(., c("GEOID", estimate )) %>%
-  rename(., movers23 = estimate) 
 
-
-merged_tract_tx <- tract_tx_pop %>%
-    left_join(., tract_tx_hunit, 
-            by = c("GEOID" = "GEOID")) %>% 
-    left_join(., tract_tx_median_value, 
-            by = c("GEOID" = "GEOID")) %>% 
-    left_join(., tract_tx_movers, 
+merged_tract_tx <- tract_tx_pop_2020 %>%
+    left_join(., tract_tx_hunit_2020, 
             by = c("GEOID" = "GEOID"))
 
 
@@ -130,7 +153,449 @@ write.csv(merged_tract_tx, "~/Documents/_UCL_grad school/UCL/Dis/trial_project/D
 
 ```
 
-```{r}
 
+#Dataset 3 Pull population for Texas state then county
+
+
+Get full list of variables in each year.
+Full list of variables available at this URL : https://api.census.gov/data/2023/acs/acs5/profile/variables.html 
+```{r}
+acs13 <- load_variables(year = 2013,
+                        dataset = "acs5", 
+                        cache = TRUE)
+```
+
+
+```{r}
+acs18 <- load_variables(year = 2018,
+                        dataset = "acs5", 
+                        cache = TRUE)
+```
+
+```{r}
+acs23 <- load_variables(year = 2023,
+                        dataset = "acs5", 
+                        cache = TRUE)
+```
+
+
+```{r}
+# Load variables from ACS 5-year profile
+acs20_profile <- load_variables(year = 2020,
+                        dataset = "acs5/profile", 
+                        cache = TRUE)
+
+acs10_profile <- load_variables(year = 2010,
+                        dataset = "acs5/profile", 
+                        cache = TRUE)
+
+
+```
+
+Pull population for Texas 
+The population was 28,635,442 in 2020 and 24311891 in 2010.
+
+```{r}
+tx_pop <- get_acs(geography = "state",
+                     variables = c("DP05_0001"),
+                     state = "TX",
+                     survey = "acs5",
+                     year = 2020)
+
+tx_pop10 <- get_acs(geography = "state",
+                     variables = c("DP05_0001"),
+                     state = "TX",
+                     survey = "acs5",
+                     year = 2010)
+
+tx_pop00 <- get_decennial(geography = "state",
+                 variables = c("P001001"),
+                state = "TX",
+                year = 2000)
+```
+2020 housing units DP04_0027 
+The total number of housing units in 2023 was 11,112,975.
+ In 2013, it was 10,070,703.
+```{r}
+tx_units <- get_acs(geography = "state",
+                     variables = c("DP04_0027"),
+                     state = "TX",
+                     survey = "acs5",
+                     year = 2020)
+
+
+tx_units10 <- get_acs(geography = "state",
+                     variables = c("DP04_0001"), #DP04_0027
+                     state = "TX",
+                     survey = "acs5",
+                     year = 2010)
+
+tx_unit00 <- get_decennial(geography = "state",
+                 variables = c("H001001"),
+                state = "TX",
+                year = 2000)
+```
+
+```{r}
+# median home value  2023 $260,400 
+tx_value <- get_acs(geography = "state",
+                     variables = c("B25077_001"),
+                     state = "TX",
+                     survey = "acs5",
+                     year = 2023)
+
+# median homevalue 2013 128900
+tx_value13 <- get_acs(geography = "state",
+                     variables = c("B25077_001"),
+                     state = "TX",
+                     survey = "acs5",
+                     year = 2013)
+
+value_change <- (tx_value$estimate - tx_value13$estimate )*100 / tx_value13$estimate
+  
+value_change
+```
+
+
+Pull ACS data from 2020
+```{r}
+# FETCH the data 
+# DP05_0001 Total population 
+# DP05_0091 number of housing units  # can confirm this is the same as total housing units (DP04)
+# DP04_0001E total housing units in 2013 and 2023 but is depending on housing characteristics
+# B25077_001 Median home value
+# B07101_001E is the number of movers from another region... 
+
+county_tx_pop <- get_acs(geography = "county",
+                     variables = c("DP05_0001"),
+                     state = "TX",
+                     survey = "acs5",
+                     year = 2020)
+
+county_tx_hunit <- get_acs(geography = "county",
+                 variables = c("DP04_0027"),
+                state = "TX",
+              #  county = 201,
+                survey = "acs5",
+                year = 2020)
+
+# county_tx_median_value <- get_acs(geography = "county",
+#                  variables = c("B25077_001"),
+#                 state = "TX",
+#               #  county = 201,
+#                 survey = "acs5",
+#                 year = 2023)
+
+# DP04_0001 2023
+county_tx_hunit_occ <- get_acs(geography = "county",
+                 variables = c("DP04_0001"),
+                state = "TX",
+              #  county = 201,
+                survey = "acs5",
+                year = 2023) 
+
+#all NA values... hmmm? 
+# county_tx_movers <- get_acs(geography = "county",
+#                  variables = c("B07101_001"),
+#                 state = "TX",
+#               #  county = 201,
+#                 survey = "acs5",
+#                 year = 2023)
+#
+```
+
+Let's look at 10 years ago
+```{r}
+county_tx_pop_2010 <- get_acs(geography = "county",
+                     variables = "DP05_0001",
+                     state = "TX",
+                     survey = "acs5",
+                     year = 2010)
+
+county_tx_hunit_2010 <- get_acs(geography = "county", 
+                 variables = c("DP04_0001"),
+                state = "TX",
+              #  county = 201,
+                survey = "acs5",
+                year = 2010)
+
+# county_tx_median_value_2013 <- get_acs(geography = "county",
+#                  variables = c("B25077_001"),
+#                 state = "TX",
+#               #  county = 201,
+#                 survey = "acs5",
+#                 year = 2013)
+
+```
+Reach back to 2000
+```{r}
+county_tx_pop_2000 <- get_decennial(geography = "county",
+                 variables = c("P001001"),
+                state = "TX",
+                year = 2000)
+
+county_tx_hunit_2000 <- get_decennial(geography = "county", 
+                 variables = c("H001001"),
+                state = "TX",
+              #  county = 201,
+                survey = "acs5",
+                year = 2000)
+```
+
+
+
+Remove the variables we don't need and merge to create the dataset 
+a standard 254 counties across the 20 year time period...
+```{r}
+county_tx_pop <- county_tx_pop %>% select(., c("GEOID", "NAME", estimate )) %>%
+  rename(., population20 = estimate) 
+
+county_tx_hunit <- county_tx_hunit %>% select(., c("GEOID", estimate )) %>%
+  rename(., housing_unit20 = estimate) 
+  
+# county_tx_median_value <- county_tx_median_value %>% select(., c("GEOID", estimate )) %>%
+#   rename(., median_value23 = estimate) 
+
+# county_tx_hunit_occ <- county_tx_hunit_occ %>% select(., c("GEOID", estimate )) %>%
+#   rename(., unit_occ23 = estimate) 
+
+county_tx_pop_2010 <- county_tx_pop_2010 %>% select(., c("GEOID", estimate )) %>%
+  rename(., population10 = estimate) 
+
+county_tx_hunit_2010 <- county_tx_hunit_2010 %>% select(., c("GEOID", estimate )) %>%
+  rename(., housing_unit10 = estimate) 
+# 
+# county_tx_median_value_2013 <- county_tx_median_value_2013 %>% select(., c("GEOID", estimate)) %>%
+#   rename(., median_value13 = estimate) 
+
+county_tx_pop_2000 <- county_tx_pop_2000 %>% select(., c("GEOID", value )) %>%
+  rename(., population00 = value) 
+
+county_tx_hunit_2000 <- county_tx_hunit_2000 %>% select(., c("GEOID", value )) %>%
+  rename(., housing_unit00 = value) 
+
+
+merged_census_tx_county <- county_tx_pop %>%
+    left_join(., county_tx_hunit, 
+            by = c("GEOID" = "GEOID")) %>% 
+    left_join(., county_tx_pop_2010, 
+            by = c("GEOID" = "GEOID")) %>% 
+    left_join(., county_tx_hunit_2010, 
+            by = c("GEOID" = "GEOID")) %>%
+    left_join(., county_tx_pop_2000, 
+            by = c("GEOID" = "GEOID")) %>%
+    left_join(., county_tx_hunit_2000, 
+            by = c("GEOID" = "GEOID"))
+  
+```
+
+```{r}
+#save the dataset as a CSV 
+write.csv(merged_census_tx_county, "~/Documents/_UCL_grad school/UCL/Dis/trial_project/Data/save_census_data_county_2000_10_20.csv") 
+
+summary(merged_census_tx_county)
+```
+
+
+# Download counties from texas 
+
+```{r}
+# Get counties 
+download.file("https://www2.census.gov/geo/tiger/TIGER2020PL/LAYER/COUNTY/2020/tl_2020_48_county20.zip", 
+              destfile="Data/county_shape_48.zip")
+
+county48 <-fs::dir_info(here::here("Data"  
+                                 ))%>%  #$ means exact match
+  dplyr::filter(str_detect(path, 
+                           "tl_2020_48_county20.shp$"))%>%
+  dplyr::select(path)%>%
+  dplyr::pull()%>%
+  
+  sf::st_read() %>%
+  st_transform(., 4326)
+```
+
+
+May 12  - Places dataset 
+#sf1 has just the housing and occupancy variables
+# Total units: H001001 
+# owner occupied: H004002 
+# total population... P001001
+
+# I want the "dp" dataset from the census...
+  # DP1_0001C is total population 
+  # DP1_0147C is total housing units
+  # DP1_0001C is total population for 2020
+  
+# for 2020 DHC 
+ # P1_001N is the total population variable
+ H1_001N total units variable
+  
+  
+  
+```{r}
+summary_decennial <- load_variables(year = 2020,
+                        dataset = "sf1", 
+                        cache = TRUE)
+
+
+ddhcb_summary_decennial <- load_variables(year = 2020,
+                        dataset = "dhc", 
+                        cache = TRUE)
+```
+
+```{r}
+#the places change over time... that's okay! just need to figure out the subset that I am tracking...
+#pull the population counts 
+places_tx_pop_2000 <- get_decennial(geography = "place",
+                 variables = c("P001001"),
+                state = "TX",
+              #  county = 201,
+               # survey = "acs5",
+                year = 2000)
+
+places_tx_pop_2010 <- get_decennial(geography = "place",
+                 variables = c("P001001"),
+                state = "TX",
+              #  county = 201,
+               # survey = "acs5",
+                year = 2010)
+
+places_tx_pop_2020 <- get_decennial(geography = "place",
+                 variables = c("P1_001N"),
+                state = "TX",
+                year = 2020)
+
+
+#pull the housing unit counts 
+places_tx_hunit_2000 <- get_decennial(geography = "place",
+                 variables = c("H001001"),
+                state = "TX",
+                year = 2000)
+
+places_tx_hunit_2010 <- get_decennial(geography = "place",
+                 variables = c("H001001"),
+                state = "TX",
+                year = 2010)
+
+places_tx_hunit_2020 <- get_decennial(geography = "place",
+                 variables = c("H1_001N"),
+                state = "TX",
+                year = 2020)
+
+
+
+#rename and reduce the population
+places_tx_pop_2000 <- places_tx_pop_2000 %>% select(., c("GEOID", "NAME", value )) %>%
+  rename(., pop00 = value) 
+
+places_tx_pop_2010 <- places_tx_pop_2010 %>% select(., c("GEOID", "NAME", value )) %>%
+  rename(., pop10 = value)
+
+places_tx_pop_2020 <- places_tx_pop_2020 %>% select(., c("GEOID", "NAME", value )) %>%
+  rename(., pop20 = value)
+
+#rename and reduce the housing units 
+places_tx_hunit_2000 <- places_tx_hunit_2000 %>% select(., c("GEOID", value )) %>%
+  rename(., hunit00 = value) 
+
+places_tx_hunit_2010 <- places_tx_hunit_2010 %>% select(., c("GEOID", value )) %>%
+  rename(., hunit10 = value) 
+
+places_tx_hunit_2020 <- places_tx_hunit_2020 %>% select(., c("GEOID", value )) %>%
+  rename(., hunit20 = value) 
+
+
+#merge and take left join, so only the places that existed at time of 2000.... 
+merged_census_places_tx <- places_tx_pop_2000 %>%
+    left_join(., places_tx_hunit_2000, 
+          by = c("GEOID" = "GEOID")) 
+
+merged_census_places_tx_10 <- places_tx_pop_2010 %>%
+    left_join(., places_tx_hunit_2010, 
+          by = c("GEOID" = "GEOID")) 
+
+merged_census_places_tx_20 <- places_tx_pop_2020 %>%
+    left_join(., places_tx_hunit_2020, 
+          by = c("GEOID" = "GEOID")) 
+  
+```
+
+```{r}
+#only has the 1510 places that 2000 existed...
+all_years_census_places_tx <- merged_census_places_tx %>%
+    left_join(., merged_census_places_tx_10, 
+          by = c("GEOID" = "GEOID")) %>%
+    left_join(., merged_census_places_tx_20, 
+          by = c("GEOID" = "GEOID")) 
+```
+
+#save and write the data...
+```{r}
+#save the dataset as a CSV 
+write.csv(all_years_census_places_tx, "~/Documents/_UCL_grad school/UCL/Dis/trial_project/Data/save_census_data_places.csv") 
+```
+
+#Dataset 5 or 6 - (May 15) New datset to get the census tract population and housing units difference from 2010 to 2019 
+
+```{r}
+summary_acs <- load_variables(year = 2010,
+                        dataset = "acs5", 
+                        cache = TRUE)
+
+#B01003_001 for population 
+tract_tx_pop_2010 <- get_acs(geography = "tract",
+                 variables = c("B01003_001"),
+                state = "TX",
+              #  county = 201,
+                survey = "acs5",
+                year = 2010)
+tract_tx_pop_2019 <- get_acs(geography = "tract",
+                 variables = c("B01003_001"),
+                state = "TX",
+                survey = "acs5",
+                year = 2019)
+
+# B25001_001 for housing units 
+tract_tx_hunit_2010 <- get_acs(geography = "tract",
+                 variables = c("B25001_001"),
+                state = "TX",
+              #  county = 201,
+                survey = "acs5",
+                year = 2010)
+
+tract_tx_hunit_2019 <- get_acs(geography = "tract",
+                 variables = c("B25001_001"),
+                state = "TX",
+                survey = "acs5",
+                year = 2019)
+
+```
+```{r}
+tract_tx_pop_2010 <- tract_tx_pop_2010 %>% select(., c("GEOID", "NAME", estimate )) %>%
+  rename(., pop10 = estimate)
+
+tract_tx_pop_2019 <- tract_tx_pop_2019 %>% select(., c("GEOID", estimate )) %>%
+  rename(., pop19 = estimate)
+
+tract_tx_hunit_2010 <- tract_tx_hunit_2010 %>% select(., c("GEOID",  estimate )) %>%
+  rename(., hunit10 = estimate)
+
+tract_tx_hunit_2019 <- tract_tx_hunit_2019 %>% select(., c("GEOID", estimate )) %>%
+  rename(., hunit19 = estimate)
+
+
+all_tract_2010_2019 <- tract_tx_pop_2010 %>%
+    left_join(., tract_tx_pop_2019, 
+          by = c("GEOID" = "GEOID")) %>%
+    left_join(., tract_tx_hunit_2010, 
+          by = c("GEOID" = "GEOID")) %>%
+    left_join(., tract_tx_hunit_2019, 
+          by = c("GEOID" = "GEOID")) 
+```
+
+```{r}
+#save the dataset as a CSV 
+write.csv(all_tract_2010_2019, "~/Documents/_UCL_grad school/UCL/Dis/trial_project/Data/save_census_tracts_2010_2019.csv") 
 ```
 
