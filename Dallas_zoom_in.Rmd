@@ -1,0 +1,606 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(tidycensus)
+library(tidyverse)
+library(choroplethr)
+library(choroplethrMaps)
+library(ggplot2)
+library(dplyr)
+library(tmap)
+library(sf)
+library(jsonlite)
+library(janitor)
+```
+
+
+# try to map dallas zoning layers downloaded from city website... 
+
+```{r}
+dallas_zones <- st_read("~/Documents/_UCL_grad school/UCL/Dis/trial_project/Data/Dallas_Base_Zoning/Base_Zoning.shp") %>% st_transform(., 4326)
+```
+```{r}
+dallas_zones
+
+qtm(dallas_zones)
+```
+
+#Load boundary datasets for Census Places and Texas Census Tracts 
+```{r}
+places <- st_read("~/Documents/_UCL_grad school/UCL/Dis/trial_project/Data/tl_2024_48_place/tl_2024_48_place.shp") %>% st_transform(., 4326)
+
+texas_tracts <- st_read("~/Documents/_UCL_grad school/UCL/Dis/trial_project/Data/tract_shape_48/tl_2020_48_tract20.shp") %>%
+  st_transform(., 4326)
+
+```
+Load in the census data from 2010 and 2019 
+```{r}
+#census_tracts_data_2010_2019 <- read_csv("~/Documents/_UCL_grad school/UCL/Dis/trial_project/Data/save_census_tracts_2010_2019.csv")
+
+#join with tracts from 2010....  
+
+census_tracts <- read_csv("~/Documents/_UCL_grad school/UCL/Dis/trial_project/Data/housing_tract_census_tx_2020.csv")
+
+census_tracts <- census_tracts %>%
+  mutate(total_units_2010 = total_units_2020 - units_built_since_2010)
+
+census_tracts$GEOID <- as.character(census_tracts$GEOID)
+
+
+#join the census tract data with the texas_tracts dataset (geometry)
+
+ texas_tracts <- texas_tracts %>%
+  left_join(., census_tracts, by = c("GEOID20" = "GEOID"))
+```
+
+
+# Todo next: add colors from zoning district types onto Dallas map....
+```{r}
+
+city <- "Dallas" # "Fort Worth" #  #"Austin" #"Houston" # "Dallas" # Fort Worth
+
+city_boundary  <- places %>% filter(., NAME == city)
+
+tracts_intersect_city <- texas_tracts[st_intersects(texas_tracts, city_boundary) %>% lengths > 0,]
+
+#add a 100km buffer
+boundary_with_buffer <- st_buffer(city_boundary$geometry, 10000)
+
+tracts_intersect_buffer <- texas_tracts[st_intersects(texas_tracts, boundary_with_buffer) %>% lengths > 0,]
+
+```
+
+#display how the boundaries compare to the census tracts...
+```{r}
+ggplot()  +  geom_sf(data = tracts_intersect_city,  fill = NA, aes(color = "Census Tracts", geometry = geometry), color = "grey") + 
+    geom_sf(data = city_boundary,  alpha = 0.1, fill = "red", aes(color = NAME,  geometry = geometry)) + 
+  theme_void() +
+    labs(
+    title = paste(city, "City Boundaries and Census Tracts"),
+#    subtitle = "ACS 2023",
+    caption = "Data: US Census 2020",
+    color = "City Outline")
+```
+
+# same map as above but no legend
+```{r}
+ggplot()  +  geom_sf(data = tracts_intersect_city, color= "grey", fill = NA, aes(color = "Census Tracts", geometry = geometry)) + 
+    geom_sf(data = city_boundary,  alpha = 0.1, color = "red", fill = "red", aes(color = NAME,  geometry = geometry)) + 
+  theme_void() +
+    labs(
+    title = paste(city, "City Boundaries and Census Tracts"),
+#    subtitle = "ACS 2023",
+    caption = "Data: US Census 2020",
+    color = "City Outline")
+```
+
+#Load in NRI data
+```{r}
+NRI_tract <- read_csv("~/Documents/_UCL_grad school/UCL/Dis/trial_project/Data/National_Risk_Index_Census_Tracts_-2688098782675405028.csv")
+
+#cut it down to texas
+NRI_tract <- NRI_tract %>% clean_names()
+
+#includes data for 6883 tracts out of 6896 tracts
+NRI_tx_tract <- NRI_tract %>% 
+  filter(., state_fips_code == 48) %>% 
+  mutate(new_rating_category = case_when(
+        national_risk_index_rating_composite == "Very High" ~ "1 - Very High" , 
+    national_risk_index_rating_composite == "Relatively High" ~ "2 - Relatively High" , 
+    national_risk_index_rating_composite == "Relatively Moderate" ~ "3 - Relatively Moderate" , 
+    national_risk_index_rating_composite == "Relatively Low" ~ "4 - Relatively Low" , 
+    national_risk_index_rating_composite == "Very Low" ~ "5 - Very Low" , 
+    TRUE ~ national_risk_index_rating_composite))
+ 
+NRI_tx_tract_small <-  NRI_tx_tract %>% select(., c("county_name", "census_tract", "census_tract_fips_code", "population_2020", "building_value", "area_sq_mi","national_risk_index_value_composite", "national_risk_index_score_composite", "national_risk_index_rating_composite", "new_rating_category"))
+
+
+# NRI_tx_tract_small <- NRI_tx_tract_small %>%
+#   mutate(new_category = case_when(
+#         national_risk_index_rating_composite == "Very High" ~ "1 - Very High" , 
+#     national_risk_index_rating_composite == "Relatively High" ~ "2 - Relatively High" , 
+#     national_risk_index_rating_composite == "Relatively Moderate" ~ "3 - Relatively Moderate" , 
+#     national_risk_index_rating_composite == "Relatively Low" ~ "4 - Relatively Low" , 
+#     national_risk_index_rating_composite == "Very Low" ~ "5 - Very Low" , 
+#     TRUE ~ national_risk_index_rating_composite))
+
+```
+
+```{r}
+# join the tracts with the NRI data....
+
+tracts_intersect_city <- tracts_intersect_city %>%
+  left_join(., NRI_tx_tract_small, by = c("GEOID20" = "census_tract_fips_code"))
+```
+
+# Try texas as a whole
+```{r}
+texas_tracts_plot <- texas_tracts %>%
+  left_join(., NRI_tx_tract_small, by = c("GEOID20" = "census_tract_fips_code"))
+
+ggplot()  +  geom_sf(data = texas_tracts_plot, color = NA, alpha = 0.9, aes(fill = new_rating_category, geometry = geometry)) +
+ # geom_sf(data = city_boundary,  color= "red", alpha = 0.1, aes( geometry = geometry), ) + 
+  theme_classic() +
+  scale_fill_brewer(palette="YlGn" , direction = -1) + 
+  labs(
+    title = paste("Texas Census Tracts with National Risk Index"),
+#    subtitle = "ACS 2023",
+    caption = "Data: US Census | NRI FEMA",
+    fill = "NRI Rating Composite")
+```
+
+
+
+Map it! NRI Categories
+```{r}
+ggplot()  +  geom_sf(data = tracts_intersect_city, alpha = 0.9, aes(fill = new_rating_category, geometry = geometry)) +
+  geom_sf(data = city_boundary,  color= "red", alpha = 0.1, aes( geometry = geometry), ) + 
+  theme_classic() +
+  scale_fill_brewer(palette="YlGn" , direction = -1) + 
+  labs(
+    title = paste(city, "Census Tracts with NRI"),
+#    subtitle = "ACS 2023",
+    caption = "Data: US Census | NRI FEMA",
+    fill = "NRI Value Composite")
+```
+
+
+Map the NRI with the 100km census tracts buffer...
+```{r}
+tracts_intersect_buffer <- tracts_intersect_buffer %>%
+  left_join(., NRI_tx_tract_small, by = c("GEOID20" = "census_tract_fips_code"))
+```
+
+### Absolute RISK SCORE
+```{r}
+#issue: need to to add the city boundaries to the legend... 
+ggplot()  +  geom_sf(data = tracts_intersect_city, aes(fill = national_risk_index_score_composite, geometry = geometry)) +
+ geom_sf(data = city_boundary,  color= "red", fill= NA, aes( geometry = geometry)) +
+  theme_classic() +
+  scale_fill_distiller(palette="YlGn" , direction = 1) + 
+  labs(
+    title = paste(city, "Census Tracts with NRI"),
+    caption = "Data: US Census | NRI FEMA", 
+    fill = "NRI Risk Score")
+```
+
+# RATING CATEGORY with buffer
+```{r}
+ggplot()  +  geom_sf(data = tracts_intersect_buffer, aes(fill = national_risk_index_rating_composite, geometry = geometry)) +
+ geom_sf(data = city_boundary,  color= "red",  alpha = 0.1, aes( geometry = geometry)) +
+  theme_classic() +
+  scale_fill_brewer(palette="YlGn" , direction = -1) + 
+  labs(
+    title = paste(city, "Census Tracts with NRI"),
+    subtitle = "ACS 2023",
+    caption = "Data: US Census | NRI FEMA", 
+    fill = "NRI Rating")
+```
+
+
+#calculate the intersection of different risk categories...
+What percentage of the city is in the category (national_risk_index_rating_composite)? breakdown by area... 
+# break down by population? 
+  -  2000 versus 2020 
+```{r}
+
+#aim: get the percentage of overlap so that we can calculate the NRI of the city... 
+city_boundary <- city_boundary %>%
+  mutate(area = st_area(.))
+
+tracts_intersect_city <- st_make_valid(tracts_intersect_city)
+city_boundary <- st_make_valid(city_boundary)
+
+tracts_intersect_city_short <- tracts_intersect_city %>%   # only select columns needed to merge
+  dplyr::select(national_risk_index_score_composite, national_risk_index_rating_composite, population_2020, building_value, total_units_2010, total_units_2020,  units_built_percent_since_2010, new_rating_category, geometry)
+
+#find the intersection of the tracts and the city boundary... 
+intersection <- st_intersection(tracts_intersect_city_short, city_boundary) 
+
+intersect_pc <- intersection %>%
+  mutate(intersect_area = st_area(.))
+
+total_population <- sum(intersect_pc$population_2020)
+total_land_area <- city_boundary$area
+total_building_value <- sum(intersect_pc$building_value)
+
+ 
+ ###final
+  intersect_pc <- intersect_pc %>%
+   group_by(national_risk_index_rating_composite) %>%
+   summarise(total_area = sum(intersect_area), total_pop = sum(population_2020), total_bv = sum(building_value)) %>%
+    mutate(pct_area = total_area*100/total_land_area, pct_pop = total_pop*100/total_population, 
+           pct_building_value = total_bv*100/total_building_value)
+
+
+```
+
+
+```{r}
+#print out the population, building value, and area by the NRI category... 
+intersect_pc
+```
+
+# CLEANER -- Try mapping the  intersection so that we only get the outlines of the 
+```{r}
+ggplot()  +  geom_sf(data = intersection, aes(fill = new_rating_category, geometry = geometry)) +
+ #geom_sf(data = city_boundary,  color= "red",  alpha = 0.1, aes( geometry = geometry)) +
+  theme_classic() +
+  scale_fill_brewer(palette="YlGn" , direction = -1) + 
+  labs(
+    title = paste(city, "Census Tracts with NRI"),
+    subtitle = "ACS 2023",
+    caption = "Data: US Census | NRI FEMA", 
+    fill = "NRI Rating")
+```
+
+Show the population distribution (normalised by area... )
+```{r}
+#calculate population density by sq km 
+intersection <- intersection %>%
+  mutate(area_calc = st_area(.)/1000000) %>%
+  mutate(pop20_normal = population_2020/area_calc) %>%
+  mutate(pop20_density_no_unit = units::drop_units(pop20_normal))
+
+
+#consider the z score for population density... 
+ggplot()  +  geom_sf(data = intersection, aes(fill = pop20_density_no_unit, geometry = geometry)) +
+ #geom_sf(data = city_boundary,  color= "red",  alpha = 0.1, aes( geometry = geometry)) +
+  theme_classic() +
+  scale_fill_distiller(palette="YlGn", direction = 1 , limits = c(0, 25000)) + 
+  # limits = c(min(intersection$pop20_density_no_unit), max(intersection$pop20_density_no_unit))) +
+  labs(
+    title = paste(city, "Distribution of Population Density by Census Tracts"),
+    subtitle = "US Census 2020, Density by Meter squared",
+    caption = "Data: US Census", 
+    fill = "Population Density")
+
+
+```
+
+```{r}
+#analyse housing production 
+intersection <- intersection %>%
+  mutate(units_2010_normalised_nounit  = units::drop_units(total_units_2010/area_calc)) %>%
+  mutate(units_2020_normalised_nounit = units::drop_units(total_units_2020/area_calc))
+
+
+ggplot()  +  geom_sf(data = intersection, aes(fill = units_2010_normalised_nounit, geometry = geometry)) +
+ #geom_sf(data = city_boundary,  color= "red",  alpha = 0.1, aes( geometry = geometry)) +
+  theme_classic() +
+  scale_fill_distiller(palette="YlGn", direction = 1,  limits = c(0,80000)) +
+  labs(
+    title = paste(city, "Housing Density by Census Tracts"),
+    subtitle = "US Census 2010, Housing Units by Square Kilometer",
+    caption = "Data: US Census", 
+    fill = "Housing Density")
+```
+
+```{r}
+ggplot()  +  geom_sf(data = intersection, aes(fill = units_2020_normalised_nounit, geometry = geometry)) +
+ #geom_sf(data = city_boundary,  color= "red",  alpha = 0.1, aes( geometry = geometry)) +
+  theme_classic() +
+  scale_fill_distiller(palette="YlGn", direction = 1,  limits = c(0,8000)) +
+  labs(
+    title = paste(city, "Housing Density by Census Tracts"),
+    subtitle = "US Census 2020, Housing Units by Square Kilometer",
+    caption = "Data: US Census", 
+    fill = "Housing Density")
+```
+```{r}
+ 
+ggplot()  +  geom_sf(data = intersection, aes(fill = units_built_percent_since_2010, geometry = geometry)) +
+ #geom_sf(data = city_boundary,  color= "red",  alpha = 0.1, aes( geometry = geometry)) +
+  theme_classic() +
+  scale_fill_distiller(palette="Greens", direction = 1,  limits = c(0,300)) +
+  labs(
+    title = paste(city, "Housing Growth"),
+    subtitle = "Census Tracts Percent Change Housing Units 2010 to 2020",
+    caption = "Data: US Census", 
+    fill = "Housing Percentage Change")
+
+```
+
+```{r}
+# calculate the growth of housing in which areas? 
+
+totalunits2010 <- sum(intersection$total_units_2010)
+totalunits2020 <- sum(intersection$total_units_2020)
+
+  intersect_housing <- intersection %>%
+  mutate(intersect_area = st_area(.)) %>%
+   group_by(national_risk_index_rating_composite) %>%
+   summarise(total_area = sum(intersect_area), total_pop = sum(population_2020), 
+             total_2010hunit = sum(total_units_2010), total_2020hunit = sum(total_units_2020)) %>%
+    mutate(pct_area = total_area*100/total_land_area, pct_pop = total_pop*100/total_population, 
+           pct_housing10 = total_2010hunit*100 /totalunits2010, pct_housing20 = total_2020hunit*100/ totalunits2020)
+  
+  intersect_housing <- intersect_housing %>%
+    mutate(unit_growth = total_2020hunit -total_2010hunit)
+
+  intersect_housing
+```
+
+
+###DALLAS Zoning
+
+#lets create a new variable on the dallas zoning dataset to categorize the zoning into residential or mulit
+#family... 
+
+From the Dallas Zones website: https://weborigin1.dallascityhall.com/zoning/html/residential_districts.html 
+
+Residential Zones: 
+
+A(A) - Agricultural District
+R-1ac(A) - Single Family 1 Acre District
+R-1/2ac(A) - Single Family 1/2 Acre District
+R-16(A) - Single Family 16,000 Square Feet District
+R-13(A) - Single Family 13,000 Square Feet District
+R-10(A) - Single Family 10,000 Square Feet District
+R-7.5(A) - Single Family 7,500 Square Feet District
+R-5(A) - Single Family 5000 Square Feet District
+D - Duplex District
+TH-1(A) - Townhouse 1 District
+TH-2(A) - Townhouse 2 District
+TH-3(A) - Townhouse 3 District
+CH - Clustered Housing District
+MF-1(A) and MF-1(SAH) - Multifamily District
+MF-2(A) and MF-2(SAH) - Multifamily District
+MF-3(A) - Multifamily District
+MF-4(A) - Multifamily District
+MH(A) - Mobile Home District
+
+Example code: 
+starwars %>%
+  select(name:mass, gender, species) %>%
+  mutate(
+    type = case_when(
+      height > 200 | mass > 200 ~ "large",
+      species == "Droid"        ~ "robot",
+      TRUE                      ~ "other"
+    )
+  )
+
+match_vector <- c("B", "F")
+
+df_new <- df %>% 
+  group_by(ID) %>% 
+  mutate(Final = if_else(any(Name %in% match_vector), 
+                         paste(match_vector[match_vector %in% Name], collapse = ";"), 
+                         "No"))
+
+```{r}
+#mutate the original dataset... 
+# add residential versus other type, and then multi family versus other 
+resi_zones_vector <- c("A(A)", "R-1ac(A)", "R-1/2ac(A)", "R-16(A)", "R-13(A)", "R-10(A)",
+                       "R-7.5(A)", "R-5(A)", "D", "TH-1(A)", "TH-2(A)", "TH-3(A)", "CH",
+                       "MF-1(A)","MF-1(SAH)", "MF-2(A)", "MF-2(SAH)", "MF-3(A)", "MF-4(A)", 
+                       "MH(A)")
+
+multi_unit_zones_vector <- c("D", "MF-1(A)", "MF-1(SAH)", "MF-2(A)", "MF-2(SAH)", "MF-3(A)", 
+                             "MF-4(A)", "MH(A)")
+
+dallas_zones_new <- dallas_zones %>%
+  group_by(ZONE_DIST) %>%
+  mutate(resi_district_type = if_else(any(ZONE_DIST %in% resi_zones_vector), 
+                                 TRUE,
+                                 FALSE)) %>%
+  mutate(multi_unit = if_else(any(ZONE_DIST %in% multi_unit_zones_vector), 
+                                 TRUE,
+                                 FALSE))
+                                 
+
+```
+
+Lets map some
+```{r}
+ggplot()  +  geom_sf(data = dallas_zones_new, color = NA, aes(fill = resi_district_type, geometry = geometry)) +
+# geom_sf(data = city_boundary,  color= "red",  alpha = 0.1, aes( geometry = geometry)) +
+  theme_classic() +
+  scale_fill_brewer(palette="BlGn" , direction = 1) + 
+  labs(
+    title = paste(city, "Residential Zoning"),
+    subtitle = "ACS 2023",
+    caption = "Data: US Census | NRI FEMA", 
+    fill = "Residential Zoning")
+```
+# Calculate the values... 
+```{r}
+dallas_zones_new <- st_make_valid(dallas_zones_new)
+#city_boundary <- st_make_valid(city_boundary)
+
+dallas_zones_new_short <- dallas_zones_new %>%   # only select columns needed to merge
+  dplyr::select(ZONE_DIST, resi_district_type, multi_unit, geometry)
+
+intersect_dallas <- st_intersection(dallas_zones_new_short, city_boundary) 
+
+intersect_dallas <- intersect_dallas %>%
+  mutate(intersect_area = st_area(.))
+
+city_boundary <- city_boundary %>%
+  mutate(area = st_area(.))
+city_boundary$area #863242278
+
+#calculate
+dallas_total_land_area <- city_boundary$area
+```
+
+# Calculate the percentages of city that is residential / non resi zoning
+```{r}
+# print out the portions of area... for dallas zoning
+ ###final
+  intersect_dallas_resi <- intersect_dallas %>%
+   group_by(resi_district_type) %>%
+   summarise(total_area = sum(intersect_area)) %>% #, total_pop = sum(population_2020), total_bv = sum(building_value))%>%
+    mutate(pct_area = total_area*100/dallas_total_land_area) #, pct_pop = total_pop*100/total_population, 
+          # pct_building_value = total_bv*100/total_building_value) 
+intersect_dallas_resi
+```
+
+
+#Calculate the percentages of city that is multi -unit or not... 
+```{r}
+  ###final
+  intersect_dallas_multi <- intersect_dallas %>%
+   group_by(multi_unit) %>%
+   summarise(total_area = sum(intersect_area)) %>% #, total_pop = sum(population_2020), total_bv = sum(building_value))%>%
+    mutate(pct_area = total_area*100/dallas_total_land_area) #, pct_pop = total_pop*100/total_population, 
+          # pct_building_value = total_bv*100/total_building_value)
+
+intersect_dallas_multi
+
+```
+
+
+# map out the multi unit portions of the city....
+```{r}
+
+ggplot()  +  geom_sf(data = dallas_zones_new, color = NA, aes(fill = multi_unit, geometry = geometry)) +
+# geom_sf(data = city_boundary,  color= "red",  alpha = 0.1, aes( geometry = geometry)) +
+  theme_classic() +
+  scale_fill_brewer(palette="YlGn" , direction = 1) + 
+  labs(
+    title = paste(city, "Dallas Multi Unit Zoning"),
+    subtitle = "ACS 2023",
+    caption = "Data: US Census | NRI FEMA", 
+    fill = "Multi residential Zoning")
+```
+
+# TODO: Now overlap the zoning with the NRI... 
+```{r}
+dallas_zones_new_short <- st_make_valid(dallas_zones_new_short)
+
+#dallas_zones_new_short <- dallas_zones_new_short %>%
+ # mutate(area_calc = st_area(.))
+
+#try combining the areas first... 
+# combine based on national_risk_rating_composite
+tracts_intersect_city_short_NRI <- tracts_intersect_city_short %>%
+  select(c("new_rating_category", "geometry")) %>%
+  group_by(new_rating_category) %>%
+   summarise(geometry = st_union(geometry ))
+
+#, "total_units_2010", "total_units_2020",
+#%>%
+#  group_by(national_risk_index_rating_composite) %>%
+#  summarize(geometry= st_union(geometry), total_2010 = sum(total_units_2010), 
+#            total_2020 = sum(total_units_2020))
+
+#combine dallas zones based on zone district 
+#dallas_zones_new_short_combined <- dallas_zones_new_short %>%
+#  group_by(resi_district_type, multi_unit) %>%
+#  summarize(geometry = st_union(geometry))
+
+#just combine by district
+dallas_zones_district <-  dallas_zones_new_short %>%
+  group_by(ZONE_DIST, resi_district_type, multi_unit) %>%
+  summarize(geometry = st_union(geometry))
+
+tracts_intersect_city_short_NRI <- st_make_valid(tracts_intersect_city_short_NRI)
+
+#dallas_zones_new_short_combined <- st_make_valid(dallas_zones_new_short_combined)
+
+dallas_zones_district <- st_make_valid(dallas_zones_district)
+
+ 
+#intersect the zoning with the NRI census tracts 
+#NRI_zoning_dallas <- st_intersection(tracts_intersect_city_short_combined, dallas_zones_new_short_combined) 
+
+NRI_zoning_dallas <- st_intersection(tracts_intersect_city_short_NRI, dallas_zones_district, model = "closed") 
+
+dallas_zones_district <- st_make_valid(dallas_zones_district)
+
+sf_use_s2(FALSE)
+
+
+NRI_zoning_dallas <- NRI_zoning_dallas %>%
+  mutate(area_calc = st_area(.))
+
+#NRI_zoning_dallas_grouped <- NRI_zoning_dallas %>%
+#  group_by(ZONE_DIST, national_risk_index_rating_composite) %>%
+#  summarize(geometry = st_union(geometry)) 
+
+NRI_zoning_dallas_no_geom <- NRI_zoning_dallas %>%
+  st_drop_geometry()
+
+
+NRI_zoning_dallas_no_geom_grouped <- NRI_zoning_dallas_no_geom %>%
+  select(-c(ZONE_DIST)) %>%
+  group_by(new_rating_category, resi_district_type, multi_unit) %>%
+  summarize(total_area = sum(area_calc))
+
+
+#calculate
+total_zoning_land_area <- sum(NRI_zoning_dallas_no_geom_grouped$total_area)
+
+dallas_total_land_area <- city_boundary$area
+
+
+NRI_zoning_dallas_no_geom_grouped <- NRI_zoning_dallas_no_geom_grouped %>%
+  mutate(pct_area = total_area*100/total_zoning_land_area, total_area_km = total_area/1000000)
+```
+
+```{r}
+NRI_zoning_dallas_resi <- NRI_zoning_dallas %>%
+  filter(resi_district_type == TRUE)
+
+```
+
+```{r}
+ggplot()  +  geom_sf(data = NRI_zoning_dallas_resi, color = NA, aes(fill = new_rating_category, geometry = geometry)) +
+# geom_sf(data = city_boundary,  color= "red",  alpha = 0.1, aes( geometry = geometry)) +
+  theme_classic() +
+  scale_fill_brewer(palette="YlGn" , direction = -1) + 
+  labs(
+    title = paste(city, "Residential Zoning by NRI"),
+    subtitle = "ACS 2020",
+    caption = "Data: US Census | NRI FEMA", 
+    fill = "NRI Rating")
+```
+
+
+```{r}
+
+NRI_zoning_dallas_multi <- NRI_zoning_dallas %>%
+  filter(resi_district_type == TRUE & multi_unit == TRUE)
+
+ggplot()  +  geom_sf(data = NRI_zoning_dallas_multi, color = NA, aes(fill = new_rating_category, geometry = geometry)) +
+# geom_sf(data = city_boundary,  color= "red",  alpha = 0.1, aes( geometry = geometry)) +
+  theme_classic() +
+  scale_fill_brewer(palette="YlGn" , direction = -1) + 
+  labs(
+    title = paste(city, "Residential Multi-family Zoning by NRI"),
+    subtitle = "ACS 2020",
+    caption = "Data: US Census | NRI FEMA", 
+    fill = "NRI Rating")
+```
+
+### San antonio 
+```{r}
+
+SA_Zoning <- read_csv("Data/San_Antonio_Zoning.csv")
+```
+

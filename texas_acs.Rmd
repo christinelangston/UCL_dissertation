@@ -74,7 +74,7 @@ Plot the growth over 10 years
 #   ggplot(aes(y = popchange10, x = reorder(NAME, popchange10))) +
 #   geom_point()
 ```
-Find five fastest growing counties since 2013
+Find five fastest growing counties since 2010
 
 ```{r}
 #get the top values of tp_tx_county$tenyeargrowth 
@@ -155,11 +155,12 @@ highest_unit_change
 #map again 
 ggplot() +
   geom_sf(data= merged_texas, aes(fill = popchange10, geometry = geometry)) +
-    geom_sf(data= highest_pop_change, aes(color = NAME, fill = popchange10, geometry = geometry)) +
+    geom_sf(data= highest_pop_change, fill = NA, aes(color = NAME,  geometry = geometry)) +
+  #fill = popchange10,
     labs(
     title = "Population Change Across Texas Counties",
-    subtitle = "Percent Change of 2010 to 2020, top seven outlined in red",
-    caption = "Data: American Community Survey", 
+    subtitle = "Percent Change of 2010 to 2020, top seven outlined in color",
+    caption = "Data: US Census", 
     fill=  "Percent Population Change", 
     color = "Counties") +
   theme_classic() +
@@ -328,6 +329,27 @@ labs(
 
 ```
 
+
+```{r}
+#plot the NRI with the top counties.. 
+ggplot() +
+  geom_sf(data = merged_texas, aes(fill = RISK_SCORE, geometry = geometry)) +
+     geom_sf(data= highest_pop_change, fill = NA, aes(color = NAME, geometry = geometry)) +
+labs(
+    title = "Risk Score Across Texas Counties",
+    subtitle = "National Risk Index March 2023",
+    caption = "Data: FEMA National Risk Index | US Census", 
+    fill = "Risk Score"
+  ) + 
+  theme(
+    plot.title = element_text(size = 24, hjust = 0.5)
+  ) +
+    theme_classic() +
+  scale_fill_distiller(palette="YlGn" , direction = 1) 
+
+```
+
+
 #create additional maps of the hazard scores.. .using merged_texas_all_NRI
 ```{r}
 #EAL_VALT - total expected annual loss
@@ -363,7 +385,7 @@ coordsW <- merged_texas$geometry%>%
 plot(coordsW,axes=TRUE)
 
 
-#create a neighbours list
+#create a neighbours list from polygon list, In this case, the geometry of Texas Counties
 LWard_nb <- merged_texas$geometry %>%
   poly2nb(., queen=T)
 
@@ -393,7 +415,16 @@ I_LWard_Global_Density <- merged_texas %>%
 
 I_LWard_Global_Density
 
+#gearys C
+C_LWard_Global_Density <- 
+  merged_texas %>%
+  pull(RISK_SCORE) %>%
+  as.vector()%>%
+  geary.test(., Lward.lw)
 
+C_LWard_Global_Density
+
+#getis ord generally is used in cases when a polygon might not have any neighbors
 G_LWard_Global_Density <- 
   merged_texas %>%
   pull(RISK_SCORE) %>%
@@ -413,6 +444,20 @@ head(Gi_LWard_Local_Density)
 
 merged_texas <- merged_texas %>%
   mutate(density_G = as.numeric(Gi_LWard_Local_Density))
+
+# #actually do this with local morans
+# Moran_Local_Density <- merged_texas %>%
+#   pull(RISK_SCORE) %>%
+#   as.vector()%>%
+#   localmoran(., Lward.lw) %>%
+#   as_tibble()
+# 
+# head(Moran_Local_Density)
+# 
+# merged_texas <- merged_texas %>%
+#   mutate(density_I =as.numeric(Moran_Local_Density$Ii))%>%
+#   mutate(density_Iz =as.numeric(Moran_Local_Density$Z.Ii))
+
 ```
 
 #Map the GI autocorrelation
@@ -433,8 +478,24 @@ breaks1<-c(-1000,-2.58,-1.96,-1.65,1.65,1.96,2.58,1000)
 #         palette=GIColours,
 #         midpoint=NA,
 #         title="Gi*, NRI texas")
+# 
+# 
+# ggplot() +
+#   geom_sf(data = merged_texas, aes(fill = density_Iz, geometry = geometry)) +
+#   labs(
+#     title = "Risk Score Autocorrelation Across Texas Counties",
+#     subtitle = "Climate Event Risk Index March 2023",
+#     caption = "Data: FEMA National Risk Index | US Census", 
+#     fill = "Density Metric"
+#   ) + 
+#   theme(
+#     plot.title = element_text(size = 24, hjust = 0.5)
+#   ) +
+#     theme_classic() +
+#   scale_fill_distiller(palette="YlGn" , direction = 1) 
+```
 
-
+```{r}
 ggplot() +
   geom_sf(data = merged_texas, aes(fill = density_G, geometry = geometry)) +
   labs(
@@ -449,7 +510,6 @@ ggplot() +
     theme_classic() +
   scale_fill_distiller(palette="YlGn" , direction = 1) 
 ```
-
 
 <!-- Let's map Harris county (Aka Houston ) -->
 <!-- ```{r} -->
@@ -484,6 +544,11 @@ print(mean(merged_texas$popchange10)) #6.551286
 print(sd(merged_texas$popchange10)) # 17.05852
 merged_texas$popchange10z <- (merged_texas$popchange10-mean(merged_texas$popchange10))/sd(merged_texas$popchange10)
 
+
+print(mean(merged_texas$unitchange10)) # 5.486583
+print(sd(merged_texas$unitchange10)) # 9.149163
+merged_texas$unitchange10z <- (merged_texas$unitchange10-mean(merged_texas$unitchange10))/sd(merged_texas$unitchange10)
+
 ```
 
 ## Try to map the z score or standard deviation... 
@@ -505,6 +570,26 @@ ggplot() +
   scale_fill_distiller(palette="YlGn" , direction = 1) 
 ```
 
+#standard deviation of housing change from 2010 to 2020
+```{r}
+ggplot() +
+  geom_sf(data = merged_texas, aes(fill = unitchange10z, geometry = geometry)) +
+#  geom_sf(data = texas_cities, aes(fill = "black", geometry = geometry )) +
+  theme_classic() +
+  labs(
+    title = "Housing Unit Change Across Texas Counties",
+    subtitle = "Standard deviation of 2010 to 2020",
+    caption = "Data: American Community Survey",
+    fill = "Standard Deviation"
+  ) + 
+   theme(
+    plot.title = element_text(size = 24, hjust = 0.5)
+  ) +
+    theme_classic() +
+  scale_fill_distiller(palette="YlGn" , direction = 1) 
+```
+
+
 #Autocorrelation of population change 2010 to 2020
 ```{r}
 #Can reuse the neighbors list from above because geometry isnt changing
@@ -518,13 +603,13 @@ I_LWard_Global_Density_pop <- merged_texas %>%
 I_LWard_Global_Density_pop
 
 
-G_LWard_Global_Density_pop <- 
-  merged_texas %>%
-  pull(popchange10) %>%
-  as.vector()%>%
-  globalG.test(., Lward.lw)
-
-G_LWard_Global_Density_pop
+# G_LWard_Global_Density_pop <- 
+#   merged_texas %>%
+#   pull(popchange10) %>%
+#   as.vector()%>%
+#   globalG.test(., Lward.lw)
+# 
+# G_LWard_Global_Density_pop
 ```
 
 ```{r}
@@ -575,13 +660,13 @@ I_LWard_Global_Density_unit <- merged_texas %>%
 I_LWard_Global_Density_unit
 
 
-G_LWard_Global_Density_unit <- 
-  merged_texas %>%
-  pull(unitchange10) %>%
-  as.vector()%>%
-  globalG.test(., Lward.lw)
-
-G_LWard_Global_Density_unit
+# G_LWard_Global_Density_unit <- 
+#   merged_texas %>%
+#   pull(unitchange10) %>%
+#   as.vector()%>%
+#   globalG.test(., Lward.lw)
+# 
+# G_LWard_Global_Density_unit
 ```
 
 ```{r}
@@ -596,6 +681,9 @@ merged_texas <- merged_texas %>%
   mutate(density_G_unit = as.numeric(Gi_LWard_Local_Density_unit))
 ```
 
+```{r}
+
+```
 
 
 #Map the GI autocorrelation for population change
