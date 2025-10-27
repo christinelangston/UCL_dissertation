@@ -2,7 +2,7 @@
 June 2025, Masters in City Planning at 
 University College London (UCL), awarded Distinction. 
 
-Repo for R code files and data. Please see the files `Sharable_paper.pdf` for the final draft of my dissertation and `Geomob_presentation.pdf` for the presentation format. 
+Repo for R code files and data. Please see the files `Sharable_Langston_A4_Final_Dis.pdf` for the final draft of my dissertation and `geomob.pdf` for the presentation format. 
 
 
 Abstract: 
